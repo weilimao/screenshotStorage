@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>截图智能暂存箱</title>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div class="app-container">
+    <!-- 侧边栏 -->
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="logo-icon">📸</div>
+        <h2>暂存箱 <span>Box</span></h2>
+      </div>
+      
+      <!-- 滚动主体区 -->
+      <div class="sidebar-body">
+        <div class="control-group">
+          <label class="section-title">屏幕小浮窗</label>
+          <button id="btn-toggle-float" class="btn btn-primary">
+            <span class="icon">✨</span>
+            <span id="float-btn-text" class="text">开启悬浮窗</span>
+          </button>
+        </div>
+
+        <div class="control-group">
+          <label class="section-title">界面主题</label>
+          <button id="btn-toggle-theme" class="btn btn-secondary">
+            <span id="theme-icon" class="icon">☀️</span>
+            <span id="theme-text" class="text">切换为浅色</span>
+          </button>
+        </div>
+
+        <div class="control-group">
+          <div class="toggle-container">
+            <span class="toggle-label">🚀 开机自启</span>
+            <label class="switch">
+              <input type="checkbox" id="switch-autostart">
+              <span class="slider round"></span>
+            </label>
+          </div>
+        </div>
+
+        <div class="control-group">
+          <label class="section-title">微信截图文件夹监听</label>
+          <div class="folder-path-display" id="watch-folder-list">
+            <div class="empty-folder-tip">暂无监听目录</div>
+          </div>
+          <button id="btn-add-folder" class="btn btn-secondary btn-sm">
+            <span>➕</span> 添加监听文件夹
+          </button>
+        </div>
+      </div>
+
+      <div class="control-group footer">
+        <button id="btn-clear-all" class="btn btn-danger btn-sm">
+          <span>🗑️</span> 清空所有截图
+        </button>
+        <div class="app-version">v1.0.0 · 智能中转器</div>
+      </div>
+    </aside>
+
+    <!-- 主展示区域 -->
+    <main class="main-content">
+      <header class="content-header">
+        <h1>我的截图暂存 <span>(拖拽图片到 CLI 终端即录入路径)</span></h1>
+        <div class="status-badge">
+          <span class="status-dot pulsing"></span>
+          已开启剪贴板监听
+        </div>
+      </header>
+      
+      <!-- 截图列表 -->
+      <div class="image-grid-container">
+        <div id="image-grid" class="image-grid">
+          <!-- 动态加载图片卡片 -->
+        </div>
+        <div id="empty-state" class="empty-state">
+          <div class="empty-icon">📤</div>
+          <h3>暂无截图数据</h3>
+          <p>按下系统截图（如 `Win + Shift + S` 或微信截图）后，图片将自动落盘并同步至此。</p>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <div id="toast" class="toast">复制成功！</div>
+  
+  <!-- 图片大图预览模态框 -->
+  <div id="preview-modal" class="preview-modal">
+    <button class="preview-close-btn" id="preview-close-btn">×</button>
+    <img id="preview-image" src="" alt="Preview">
+  </div>
+  
+  <script>var exports = {};</script>
+  <script src="../../dist/renderer/js/renderer.js"></script>
+</body>
+</html>

@@ -1,0 +1,60 @@
+{
+  "name": "screenshot-storage",
+  "version": "1.0.0",
+  "description": "截图智能暂存箱 - 解决 CLI 终端无法粘贴图片的问题",
+  "main": "dist/main/index.js",
+  "scripts": {
+    "build": "tsc",
+    "watch": "tsc -w",
+    "start": "tsc && electron .",
+    "dev": "tsc && electron .",
+    "dist": "npm run build && electron-builder"
+  },
+  "build": {
+    "appId": "com.screenshot.storage",
+    "productName": "截图智能暂存箱",
+    "publish": null,
+    "directories": {
+      "output": "dist-package"
+    },
+    "files": [
+      "dist/**/*",
+      "src/renderer/**/*.html",
+      "src/renderer/**/*.css",
+      "assets/**/*",
+      "package.json"
+    ],
+    "win": {
+      "icon": "assets/tray.png",
+      "target": [
+        "nsis",
+        "zip"
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "截图智能暂存箱"
+    },
+    "mac": {
+      "target": [
+        "dmg",
+        "zip"
+      ]
+    }
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "chokidar": "^3.6.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "electron": "^28.2.0",
+    "electron-builder": "^26.8.1",
+    "typescript": "^5.3.3"
+  }
+}

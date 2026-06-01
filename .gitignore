@@ -1,0 +1,24 @@
+# 依赖库
+node_modules/
+
+# TypeScript 编译输出目录
+dist/
+dist-package/
+
+# 本地截图暂存箱物理目录（必须忽略，以防将用户隐私截图误上传至 Git 仓库）
+storage/
+
+# 日志文件
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# 系统与编辑器缓存
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# 本地运行配置文件
+config.json

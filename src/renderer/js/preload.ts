@@ -1,0 +1,56 @@
+const { contextBridge, ipcRenderer } = require('electron');
+const { IPC_CHANNELS } = require('../../shared/constants');
+
+contextBridge.exposeInMainWorld('electronAPI', {
+  getImages: () => ipcRenderer.invoke(IPC_CHANNELS.GET_IMAGES),
+  deleteImage: (id: string) => ipcRenderer.invoke(IPC_CHANNELS.DELETE_IMAGE, id),
+  clearAll: () => ipcRenderer.invoke(IPC_CHANNELS.CLEAR_ALL),
+  getConfig: () => ipcRenderer.invoke(IPC_CHANNELS.GET_CONFIG),
+  updateConfig: (config: any) => ipcRenderer.invoke(IPC_CHANNELS.UPDATE_CONFIG, config),
+  selectFolder: () => ipcRenderer.invoke(IPC_CHANNELS.SELECT_FOLDER),
+  toggleFloatWindow: () => ipcRenderer.invoke(IPC_CHANNELS.TOGGLE_FLOAT_WINDOW),
+  getFloatWindowState: () => ipcRenderer.invoke(IPC_CHANNELS.FLOAT_WINDOW_STATE),
+  
+  // 拖拽方法
+  startDrag: (filePath: string) => ipcRenderer.send(IPC_CHANNELS.START_DRAG, filePath),
+  resizeFloatWindow: (width: number, height: number) => ipcRenderer.send('window:resize-float', width, height),
+  openFile: (filePath: string) => ipcRenderer.invoke('file:open', filePath),
+  triggerMainPreview: (filePath: string) => ipcRenderer.invoke('window:trigger-preview', filePath),
+
+  // 主进程向渲染进程通知的监听器
+  onNewImage: (callback: (record: any) => void) => {
+    const listener = (_event: any, record: any) => callback(record);
+    ipcRenderer.on(IPC_CHANNELS.ON_NEW_IMAGE, listener);
+    return () => {
+      ipcRenderer.removeListener(IPC_CHANNELS.ON_NEW_IMAGE, listener);
+    };
+  },
+  onImageDeleted: (callback: (id: string) => void) => {
+    const listener = (_event: any, id: string) => callback(id);
+    ipcRenderer.on(IPC_CHANNELS.ON_IMAGE_DELETED, listener);
+    return () => {
+      ipcRenderer.removeListener(IPC_CHANNELS.ON_IMAGE_DELETED, listener);
+    };
+  },
+  onConfigChanged: (callback: (config: any) => void) => {
+    const listener = (_event: any, config: any) => callback(config);
+    ipcRenderer.on(IPC_CHANNELS.ON_CONFIG_CHANGED, listener);
+    return () => {
+      ipcRenderer.removeListener(IPC_CHANNELS.ON_CONFIG_CHANGED, listener);
+    };
+  },
+  onFloatWindowStateChanged: (callback: (state: boolean) => void) => {
+    const listener = (_event: any, state: boolean) => callback(state);
+    ipcRenderer.on('window:float-state-changed', listener);
+    return () => {
+      ipcRenderer.removeListener('window:float-state-changed', listener);
+    };
+  },
+  onTriggerPreview: (callback: (filePath: string) => void) => {
+    const listener = (_event: any, filePath: string) => callback(filePath);
+    ipcRenderer.on('event:open-preview-in-main', listener);
+    return () => {
+      ipcRenderer.removeListener('event:open-preview-in-main', listener);
+    };
+  }
+});

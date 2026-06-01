@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>浮窗</title>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/float.css">
+</head>
+<body>
+  <div class="float-container">
+    <!-- 顶部拖拽栏 -->
+    <header class="drag-bar">
+      <button id="btn-close-float" class="btn-close">×</button>
+      <div class="drag-handle">
+        <span class="dot"></span>
+        <span class="dot"></span>
+        <span class="dot"></span>
+      </div>
+      <button id="btn-expand-float" class="btn-expand">▼</button>
+    </header>
+    
+    <!-- 极简图片列表 -->
+    <div class="float-content">
+      <div id="float-image-list" class="float-image-list">
+        <!-- 动态加载最多 3 张最近的截图 -->
+      </div>
+      <div id="float-empty-state" class="float-empty">
+        <div class="empty-icon">📸</div>
+        <div class="empty-text">等待截图</div>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast" class="toast">已复制</div>
+
+  <script>var exports = {};</script>
+  <script src="../../dist/renderer/js/float.js"></script>
+</body>
+</html>
