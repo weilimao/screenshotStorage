@@ -1,4 +1,4 @@
-import { app, BrowserWindow } from 'electron';
+import { app, BrowserWindow, clipboard } from 'electron';
 import * as path from 'path';
 import { ConfigManager } from './config';
 import { StorageManager } from './core/StorageManager';
@@ -49,6 +49,11 @@ function initApp() {
     try {
       const record = await storageManager.saveImage(buffer);
       console.log(`New image captured from clipboard: ${record.filename}`);
+      
+      // 截图保存后，立刻将文件绝对路径作为纯文本写回剪贴板，供终端直接粘贴
+      clipboard.writeText(record.filepath);
+      clipboardMonitor.setLastFilePaths(record.filepath);
+
       // 推送给渲染进程
       windowManager.sendToMainWindow(IPC_CHANNELS.ON_NEW_IMAGE, record);
       windowManager.sendToFloatWindow(IPC_CHANNELS.ON_NEW_IMAGE, record);
@@ -59,8 +64,19 @@ function initApp() {
 
   clipboardMonitor.onFileCaptured(async (filePath) => {
     try {
+      const storageDir = storageManager.getStoragePath();
+      // 核心安全防线：如果捕获的文件本来就保存在暂存箱的存储目录中，则直接忽略，防止无限循环
+      if (path.resolve(filePath).startsWith(path.resolve(storageDir))) {
+        return;
+      }
+
       const record = await storageManager.saveImageFromFile(filePath);
       console.log(`New image captured from folder: ${record.filename} (source: ${filePath})`);
+      
+      // 截图保存后，立刻将文件绝对路径作为纯文本写回剪贴板，供终端直接粘贴
+      clipboard.writeText(record.filepath);
+      clipboardMonitor.setLastFilePaths(record.filepath);
+
       windowManager.sendToMainWindow(IPC_CHANNELS.ON_NEW_IMAGE, record);
       windowManager.sendToFloatWindow(IPC_CHANNELS.ON_NEW_IMAGE, record);
     } catch (err) {
