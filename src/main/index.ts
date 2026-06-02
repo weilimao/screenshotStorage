@@ -1,5 +1,6 @@
 import { app, BrowserWindow, clipboard } from 'electron';
 import * as path from 'path';
+import { exec } from 'child_process';
 import { ConfigManager } from './config';
 import { StorageManager } from './core/StorageManager';
 import { WindowManager } from './core/WindowManager';
@@ -13,6 +14,36 @@ let windowManager: WindowManager;
 let clipboardMonitor: ClipboardMonitor;
 
 const isDev = !app.isPackaged;
+
+// 封装 Windows 平台图片与文件混合写入（不含 text 格式，避免死循环及 IDE 粘贴地址问题）
+function writeImageAndFileDropToClipboardWin32(filePath: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    const escapedPath = filePath.replace(/'/g, "''");
+    const psCommand = `Add-Type -AssemblyName System.Windows.Forms; ` +
+      `Add-Type -AssemblyName System.Drawing; ` +
+      `$dataObject = New-Object System.Windows.Forms.DataObject; ` +
+      `$fileList = New-Object System.Collections.Specialized.StringCollection; ` +
+      `$fileList.Add('${escapedPath}') > $null; ` +
+      `$dataObject.SetFileDropList($fileList); ` +
+      `$img = [System.Drawing.Image]::FromFile('${escapedPath}'); ` +
+      `$dataObject.SetImage($img); ` +
+      `[System.Windows.Forms.Clipboard]::SetDataObject($dataObject, $true);`;
+    
+    exec(`powershell -NoProfile -Command "${psCommand}"`, (error) => {
+      if (error) {
+        console.error('Failed to write hybrid image to clipboard via PowerShell:', error);
+        resolve(false);
+      } else {
+        resolve(true);
+      }
+    });
+  });
+}
+
+function isImageFile(filePath: string): boolean {
+  const ext = path.extname(filePath).toLowerCase();
+  return ['.png', '.jpg', '.jpeg', '.gif', '.bmp', '.webp'].includes(ext);
+}
 
 function initApp() {
   // 1. 初始化路径与配置管理
@@ -50,9 +81,21 @@ function initApp() {
       const record = await storageManager.saveImage(buffer);
       console.log(`New image captured from clipboard: ${record.filename}`);
       
-      // 截图保存后，立刻将文件绝对路径作为纯文本写回剪贴板，供终端直接粘贴
-      clipboard.writeText(record.filepath);
+      // 先将去重缓存路径设为当前文件，确保后面写入剪贴板时不会被 checkClipboard 触发二次事件
       clipboardMonitor.setLastFilePaths(record.filepath);
+
+      if (process.platform === 'win32') {
+        await writeImageAndFileDropToClipboardWin32(record.filepath);
+      } else {
+        const { nativeImage } = require('electron');
+        const img = nativeImage.createFromBuffer(buffer);
+        clipboard.write({
+          image: img,
+          ...({
+            'file-paths': [record.filepath]
+          } as any)
+        });
+      }
 
       // 推送给渲染进程
       windowManager.sendToMainWindow(IPC_CHANNELS.ON_NEW_IMAGE, record);
@@ -73,9 +116,26 @@ function initApp() {
       const record = await storageManager.saveImageFromFile(filePath);
       console.log(`New image captured from folder: ${record.filename} (source: ${filePath})`);
       
-      // 截图保存后，立刻将文件绝对路径作为纯文本写回剪贴板，供终端直接粘贴
-      clipboard.writeText(record.filepath);
+      // 先将去重缓存路径设为当前文件
       clipboardMonitor.setLastFilePaths(record.filepath);
+
+      if (isImageFile(record.filepath)) {
+        if (process.platform === 'win32') {
+          await writeImageAndFileDropToClipboardWin32(record.filepath);
+        } else {
+          const { nativeImage } = require('electron');
+          const img = nativeImage.createFromPath(record.filepath);
+          clipboard.write({
+            image: img,
+            ...({
+              'file-paths': [record.filepath]
+            } as any)
+          });
+        }
+      } else {
+        // 非图片的多媒体文件（视频、音频等）只写入纯文本路径，保证在终端和 IDE 中均可正常粘贴物理路径
+        clipboard.writeText(record.filepath);
+      }
 
       windowManager.sendToMainWindow(IPC_CHANNELS.ON_NEW_IMAGE, record);
       windowManager.sendToFloatWindow(IPC_CHANNELS.ON_NEW_IMAGE, record);

@@ -110,7 +110,9 @@ npm run dev
 
 ## 📦 跨平台打包发布
 
-项目已预装并配置好 `electron-builder` 打包引擎。您只需要在对应平台执行打包脚本，即可快速构建独立的安装包：
+项目已预装并配置好 `electron-builder` 打包引擎。有关如何自动将打包产物推送到 GitHub Releases 的详细指南，请参阅 [GitHub Releases 自动构建与发布指南](file:///d:/testCode/screenshotStorage/PUBLISH.md)。
+
+您只需要在对应平台执行打包脚本，即可快速构建独立的安装包：
 
 ### 1. 一键打包
 

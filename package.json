@@ -8,12 +8,19 @@
     "watch": "tsc -w",
     "start": "tsc && electron .",
     "dev": "tsc && electron .",
-    "dist": "npm run build && electron-builder"
+    "dist": "npm run build && electron-builder",
+    "publish": "npm run build && electron-builder --publish always"
   },
   "build": {
     "appId": "com.screenshot.storage",
     "productName": "截图智能暂存箱",
-    "publish": null,
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "weilimao",
+        "repo": "screenshotStorage"
+      }
+    ],
     "directories": {
       "output": "dist-package"
     },

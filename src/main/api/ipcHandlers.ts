@@ -6,6 +6,11 @@ import { StorageManager } from '../core/StorageManager';
 import { WindowManager } from '../core/WindowManager';
 import { ClipboardMonitor } from '../core/ClipboardMonitor';
 
+function isImageFile(filePath: string): boolean {
+  const ext = filePath.split('.').pop()?.toLowerCase();
+  return ['png', 'jpg', 'jpeg', 'gif', 'bmp', 'webp'].includes(ext || '');
+}
+
 export function registerIpcHandlers(
   configManager: ConfigManager,
   storageManager: StorageManager,
@@ -20,7 +25,7 @@ export function registerIpcHandlers(
   // 2. 删除单张图片
   ipcMain.handle(IPC_CHANNELS.DELETE_IMAGE, async (_, id: string) => {
     await storageManager.deleteImage(id);
-    clipboardMonitor.clearCache(); // 清除剪贴板缓存，允许重复复制
+    // 移除 clearCache()。如果删除时系统剪贴板中仍是此图片/文件，清空缓存会导致轮询器立刻重新捕获它，导致“删不掉”的 Bug。
     // 通知另一个窗口更新
     windowManager.sendToMainWindow(IPC_CHANNELS.ON_IMAGE_DELETED, id);
     windowManager.sendToFloatWindow(IPC_CHANNELS.ON_IMAGE_DELETED, id);
@@ -30,7 +35,7 @@ export function registerIpcHandlers(
   // 3. 手动清空所有图片/视频或全部
   ipcMain.handle(IPC_CHANNELS.CLEAR_ALL, async (_, type?: 'all' | 'image' | 'video') => {
     await storageManager.clearAll(type);
-    clipboardMonitor.clearCache(); // 清除去重比对缓存
+    // 移除 clearCache()。防止清空后剪贴板中当前的内容被立刻重新捕获。
     // 通知其他窗口更新
     windowManager.sendToMainWindow(IPC_CHANNELS.ON_IMAGE_DELETED, type || 'all');
     windowManager.sendToFloatWindow(IPC_CHANNELS.ON_IMAGE_DELETED, type || 'all');
@@ -222,11 +227,8 @@ export function registerIpcHandlers(
     try {
       clipboardMonitor.setLastFilePaths(filePath); // 设置去重缓存为当前复制路径，避免重复监听到自身
 
-      const ext = filePath.split('.').pop()?.toLowerCase();
-      const isVideo = ['mp4', 'mov', 'avi', 'mkv', 'flv', 'wmv'].includes(ext || '');
-
-      if (isVideo) {
-        // 如果是视频文件，只写入纯文本路径到剪贴板，防止 IDE 等不支持视频粘贴的编辑框因 FileDropList/text/uri-list 拦截而无法粘贴路径
+      if (!isImageFile(filePath)) {
+        // 如果是非图片文件（如视频、音频等），只写入纯文本绝对路径到剪贴板，防止编辑器拦截而无法粘贴路径
         clipboard.writeText(filePath);
         return true;
       }
@@ -234,13 +236,16 @@ export function registerIpcHandlers(
       if (process.platform === 'win32') {
         return new Promise<boolean>((resolve) => {
           const escapedPath = filePath.replace(/'/g, "''");
-          // Windows 平台下，利用 PowerShell 调用 .NET DataObject 混合写入文件列表和绝对路径文本
+          // Windows 平台下，利用 PowerShell 混合写入 FileDropList (文件物理路径) 与 Image (DIB图片格式)
+          // 不写入 Text 格式以保证在 IDE 中粘贴时优先粘贴为图片文件，同时支持终端粘贴物理路径。
           const psCommand = `Add-Type -AssemblyName System.Windows.Forms; ` +
+            `Add-Type -AssemblyName System.Drawing; ` +
             `$dataObject = New-Object System.Windows.Forms.DataObject; ` +
             `$fileList = New-Object System.Collections.Specialized.StringCollection; ` +
-            `$fileList.Add('${escapedPath}'); ` +
+            `$fileList.Add('${escapedPath}') > $null; ` +
             `$dataObject.SetFileDropList($fileList); ` +
-            `$dataObject.SetText('${escapedPath}'); ` +
+            `$img = [System.Drawing.Image]::FromFile('${escapedPath}'); ` +
+            `$dataObject.SetImage($img); ` +
             `[System.Windows.Forms.Clipboard]::SetDataObject($dataObject, $true);`;
           
           exec(`powershell -NoProfile -Command "${psCommand}"`, (error, stdout, stderr) => {
@@ -264,12 +269,14 @@ export function registerIpcHandlers(
           });
         });
       } else {
-        // 其他平台使用 Electron clipboard 原子写入混合内容
+        // 其他平台使用 Electron clipboard 写入混合图片和文件格式（去除了 text 字段）
+        const { nativeImage } = require('electron');
+        const img = nativeImage.createFromPath(filePath);
         clipboard.write({
-          text: filePath,
+          image: img,
           ...({
             'text/uri-list': Buffer.from(`file:///${filePath.replace(/\\/g, '/')}`),
-            'file-paths': Buffer.from(JSON.stringify([filePath]))
+            'file-paths': [filePath]
           } as any)
         });
         return true;
