@@ -15,20 +15,21 @@ let clipboardMonitor: ClipboardMonitor;
 const isDev = !app.isPackaged;
 
 function initApp() {
-  // 1. 初始化路径
+  // 1. 初始化路径与配置管理
   const userDataPath = app.getPath('userData');
   const configPath = path.join(userDataPath, 'config.json');
+  configManager = new ConfigManager(configPath);
   
-  const storageDir = isDev
+  const defaultStorageDir = isDev
     ? path.join(app.getAppPath(), 'storage')
     : path.join(app.getPath('pictures'), 'ScreenshotStorage');
+  const storageDir = configManager.getConfig().customStoragePath || defaultStorageDir;
 
   const preloadPath = path.join(__dirname, '../renderer/js/preload.js');
   const mainHtmlPath = path.join(__dirname, '../../src/renderer/index.html');
   const floatHtmlPath = path.join(__dirname, '../../src/renderer/float.html');
 
   // 2. 依赖实例化 (Dependency Injection)
-  configManager = new ConfigManager(configPath);
   storageManager = new StorageManager(storageDir, configManager);
   windowManager = new WindowManager(preloadPath, mainHtmlPath, floatHtmlPath);
   clipboardMonitor = new ClipboardMonitor(configManager);

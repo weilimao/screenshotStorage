@@ -18,8 +18,9 @@ export interface IStorageManager {
   saveImageFromFile(sourceFilePath: string): Promise<ImageRecord>;
   getImages(): Promise<ImageRecord[]>;
   deleteImage(id: string): Promise<void>;
-  clearAll(): Promise<void>;
+  clearAll(type?: 'all' | 'image' | 'video'): Promise<void>;
   getStoragePath(): string;
+  updateStorageDir(newDir: string): Promise<void>;
 }
 
 export interface IWindowManager {
@@ -39,21 +40,24 @@ export interface AppConfig {
   showFloatWindowOnStart?: boolean;
   theme?: 'dark' | 'light';
   openAtLogin?: boolean;
+  customStoragePath?: string;
+  storagePath?: string;
 }
 
 export interface IElectronAPI {
   getImages(): Promise<ImageRecord[]>;
   deleteImage(id: string): Promise<boolean>;
-  clearAll(): Promise<boolean>;
+  clearAll(type?: 'all' | 'image' | 'video'): Promise<boolean>;
   getConfig(): Promise<AppConfig>;
   updateConfig(config: Partial<AppConfig>): Promise<boolean>;
-  selectFolder(): Promise<string | null>;
+  selectFolder(title?: string): Promise<string | null>;
   toggleFloatWindow(): Promise<boolean>;
   getFloatWindowState(): Promise<boolean>;
   startDrag(filePath: string): void;
   resizeFloatWindow(width: number, height: number): void;
   openFile(filePath: string): Promise<boolean>;
   triggerMainPreview(filePath: string): Promise<boolean>;
+  copyFileToClipboard(filePath: string): Promise<boolean>;
   onNewImage(callback: (record: ImageRecord) => void): () => void;
   onImageDeleted(callback: (id: string) => void): () => void;
   onConfigChanged(callback: (config: AppConfig) => void): () => void;

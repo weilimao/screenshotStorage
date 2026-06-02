@@ -27,13 +27,24 @@ function renderCard(record: ImageRecord): HTMLDivElement {
   card.className = 'float-card';
   card.id = `float-card-${record.id}`;
   
+  const ext = record.filename.split('.').pop()?.toLowerCase();
+  const isVideo = ['mp4', 'mov', 'avi', 'mkv', 'flv', 'wmv'].includes(ext || '');
+  
+  let mediaHtml = '';
+  if (isVideo) {
+    mediaHtml = `<video src="${record.filepath}" muted loop autoplay style="width: 100%; height: 100%; object-fit: contain; pointer-events: none;"></video>`;
+  } else {
+    mediaHtml = `<img src="${record.filepath}" alt="Screenshot">`;
+  }
+  
+  const fileUrl = `https://${record.filepath.replace(/\\/g, '/')}`;
   card.innerHTML = `
-    <div class="float-img-wrapper" draggable="true">
-      <img src="${record.filepath}" alt="Screenshot">
+    <a href="${fileUrl}" class="float-img-wrapper" draggable="true" style="cursor: zoom-in; display: block; text-decoration: none;">
+      ${mediaHtml}
       <div class="float-overlay">
         <span class="float-drag-txt">拖动路径</span>
       </div>
-    </div>
+    </a>
     <div class="float-card-info">
       <span class="float-time">⏰ ${formatTime(record.createdAt)}</span>
       <div class="float-action-buttons" style="display: flex; gap: 4px; width: 100%;">
@@ -47,17 +58,30 @@ function renderCard(record: ImageRecord): HTMLDivElement {
     </div>
   `;
 
-  // 绑定拖动事件
-  const imgWrapper = card.querySelector('.float-img-wrapper') as HTMLDivElement;
-  imgWrapper.addEventListener('dragstart', (e) => {
-    e.preventDefault();
-    window.electronAPI.startDrag(record.filepath);
+  // 绑定拖动事件与双击预览
+  const imgWrapper = card.querySelector('.float-img-wrapper') as HTMLAnchorElement;
+  imgWrapper.addEventListener('click', (e) => {
+    e.preventDefault(); // 阻止 a 标签点击跳转
   });
+  imgWrapper.addEventListener('dragstart', (e) => {
+    const ext = record.filename.split('.').pop()?.toLowerCase();
+    const isVideo = ['mp4', 'mov', 'avi', 'mkv', 'flv', 'wmv'].includes(ext || '');
 
-  // 双击图片大图预览
-  const cardImg = card.querySelector('img') as HTMLImageElement;
-  cardImg.style.cursor = 'zoom-in';
-  cardImg.addEventListener('dblclick', () => {
+    if (isVideo) {
+      e.preventDefault();
+      // 复制绝对路径到剪贴板
+      window.electronAPI.copyFileToClipboard(record.filepath);
+      // 显示提示消息
+      showToast('已复制视频路径，可以直接粘贴');
+      // 启动原生拖拽以穿透悬浮窗边界并展示拖拽状态
+      window.electronAPI.startDrag(record.filepath);
+    } else {
+      // 图片文件：继续使用 Electron 原生拖动，支持发送物理文件
+      e.preventDefault();
+      window.electronAPI.startDrag(record.filepath);
+    }
+  });
+  imgWrapper.addEventListener('dblclick', () => {
     window.electronAPI.triggerMainPreview(record.filepath);
   });
 
@@ -67,12 +91,16 @@ function renderCard(record: ImageRecord): HTMLDivElement {
     await window.electronAPI.triggerMainPreview(record.filepath);
   });
 
-  // 绑定复制事件
+  // 绑定复制文件及路径事件
   const copyBtn = card.querySelector('.btn-copy-path') as HTMLButtonElement;
   copyBtn.addEventListener('click', async () => {
     try {
-      await navigator.clipboard.writeText(record.filepath);
-      showToast('已复制路径');
+      const success = await window.electronAPI.copyFileToClipboard(record.filepath);
+      if (success) {
+        showToast('已复制文件及路径');
+      } else {
+        showToast('复制失败');
+      }
     } catch (err) {
       console.error(err);
       showToast('复制失败');

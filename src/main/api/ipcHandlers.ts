@@ -1,4 +1,5 @@
-import { ipcMain, dialog, app, shell } from 'electron';
+import { ipcMain, dialog, app, shell, clipboard } from 'electron';
+import { exec } from 'child_process';
 import { IPC_CHANNELS } from '../../shared/constants';
 import { ConfigManager } from '../config';
 import { StorageManager } from '../core/StorageManager';
@@ -19,17 +20,20 @@ export function registerIpcHandlers(
   // 2. 删除单张图片
   ipcMain.handle(IPC_CHANNELS.DELETE_IMAGE, async (_, id: string) => {
     await storageManager.deleteImage(id);
+    clipboardMonitor.clearCache(); // 清除剪贴板缓存，允许重复复制
     // 通知另一个窗口更新
     windowManager.sendToMainWindow(IPC_CHANNELS.ON_IMAGE_DELETED, id);
     windowManager.sendToFloatWindow(IPC_CHANNELS.ON_IMAGE_DELETED, id);
     return true;
   });
 
-  // 3. 手动清空所有图片
-  ipcMain.handle(IPC_CHANNELS.CLEAR_ALL, async () => {
-    await storageManager.clearAll();
-    windowManager.sendToMainWindow(IPC_CHANNELS.ON_IMAGE_DELETED, 'all');
-    windowManager.sendToFloatWindow(IPC_CHANNELS.ON_IMAGE_DELETED, 'all');
+  // 3. 手动清空所有图片/视频或全部
+  ipcMain.handle(IPC_CHANNELS.CLEAR_ALL, async (_, type?: 'all' | 'image' | 'video') => {
+    await storageManager.clearAll(type);
+    clipboardMonitor.clearCache(); // 清除去重比对缓存
+    // 通知其他窗口更新
+    windowManager.sendToMainWindow(IPC_CHANNELS.ON_IMAGE_DELETED, type || 'all');
+    windowManager.sendToFloatWindow(IPC_CHANNELS.ON_IMAGE_DELETED, type || 'all');
     return true;
   });
 
@@ -42,11 +46,21 @@ export function registerIpcHandlers(
       console.error('Failed to get login item settings:', err);
       config.openAtLogin = false;
     }
+    config.storagePath = storageManager.getStoragePath();
     return config;
   });
 
   // 5. 更新配置
-  ipcMain.handle(IPC_CHANNELS.UPDATE_CONFIG, (_, newConfig) => {
+  ipcMain.handle(IPC_CHANNELS.UPDATE_CONFIG, async (_, newConfig) => {
+    // 如果修改了自定义存储路径，触发存储文件夹迁移
+    if (newConfig.customStoragePath && newConfig.customStoragePath !== storageManager.getStoragePath()) {
+      try {
+        await storageManager.updateStorageDir(newConfig.customStoragePath);
+      } catch (err) {
+        console.error('Failed to update storage directory:', err);
+      }
+    }
+
     configManager.updateConfig(newConfig);
 
     // 处理开机自启
@@ -78,19 +92,22 @@ export function registerIpcHandlers(
       config.openAtLogin = newConfig.openAtLogin;
     }
 
+    // 合并实际存储路径推送给前端
+    config.storagePath = storageManager.getStoragePath();
+
     // 推送配置变更通知
     windowManager.sendToMainWindow(IPC_CHANNELS.ON_CONFIG_CHANGED, config);
     windowManager.sendToFloatWindow(IPC_CHANNELS.ON_CONFIG_CHANGED, config);
     return true;
   });
 
-  // 6. 选择微信监听目录
-  ipcMain.handle(IPC_CHANNELS.SELECT_FOLDER, async () => {
+  // 6. 选择文件夹目录
+  ipcMain.handle(IPC_CHANNELS.SELECT_FOLDER, async (_, title?: string) => {
     const mainWindow = windowManager.getMainWindow();
     if (!mainWindow) return null;
 
     const result = await dialog.showOpenDialog(mainWindow, {
-      title: '选择微信截图保存目录或其它监听目录',
+      title: title || '选择微信截图保存目录或其它监听目录',
       properties: ['openDirectory']
     });
 
@@ -121,13 +138,36 @@ export function registerIpcHandlers(
     return windowManager.getFloatWindow() !== null;
   });
 
-  // 9. 处理原生图片拖动到外部 (如终端)
+  // 9. 处理原生图片/视频拖动到外部 (如终端)
   ipcMain.on(IPC_CHANNELS.START_DRAG, (event, filePath: string) => {
-    // 触发 Electron 原生拖动
-    event.sender.startDrag({
-      file: filePath,
-      icon: filePath // 拖拽时以原图作为图标展示
-    });
+    try {
+      const ext = filePath.split('.').pop()?.toLowerCase();
+      const isVideo = ['mp4', 'mov', 'avi', 'mkv', 'flv', 'wmv'].includes(ext || '');
+
+      let iconImage = filePath;
+      if (isVideo) {
+        // 核心改进：Electron 的 startDrag 必须在 IPC 事件回调中同步执行。
+        // 任何 await (如异步获取图标) 都会使该调用排入下一次微任务队列，从而错过系统原生的拖拽响应时机，导致拖拽失效。
+        // 为保证同步性，这里直接使用本地已有的静态 PNG 图片作为视频拖拽时的悬浮图标。
+        const path = require('path');
+        const fs = require('fs');
+        let fallbackPath = path.join(app.getAppPath(), 'assets/tray_small.png');
+        if (!fs.existsSync(fallbackPath)) {
+          fallbackPath = path.join(app.getAppPath(), '../../assets/tray_small.png');
+        }
+        if (!fs.existsSync(fallbackPath)) {
+          fallbackPath = path.join(__dirname, '../../assets/tray_small.png');
+        }
+        iconImage = fallbackPath;
+      }
+
+      event.sender.startDrag({
+        file: filePath,
+        icon: iconImage
+      });
+    } catch (err) {
+      console.error('Failed to start drag:', err);
+    }
   });
 
   // 10. 处理悬浮窗大小调整
@@ -176,4 +216,68 @@ export function registerIpcHandlers(
     }
     return true;
   });
+
+  // 13. 将物理文件作为“真实文件复制”动作写入系统剪贴板（供微信聊天框粘贴文件，且编辑器粘贴路径文本）
+  ipcMain.handle('file:copy-to-clipboard', async (_, filePath: string) => {
+    try {
+      clipboardMonitor.setLastFilePaths(filePath); // 设置去重缓存为当前复制路径，避免重复监听到自身
+
+      const ext = filePath.split('.').pop()?.toLowerCase();
+      const isVideo = ['mp4', 'mov', 'avi', 'mkv', 'flv', 'wmv'].includes(ext || '');
+
+      if (isVideo) {
+        // 如果是视频文件，只写入纯文本路径到剪贴板，防止 IDE 等不支持视频粘贴的编辑框因 FileDropList/text/uri-list 拦截而无法粘贴路径
+        clipboard.writeText(filePath);
+        return true;
+      }
+
+      if (process.platform === 'win32') {
+        return new Promise<boolean>((resolve) => {
+          const escapedPath = filePath.replace(/'/g, "''");
+          // Windows 平台下，利用 PowerShell 调用 .NET DataObject 混合写入文件列表和绝对路径文本
+          const psCommand = `Add-Type -AssemblyName System.Windows.Forms; ` +
+            `$dataObject = New-Object System.Windows.Forms.DataObject; ` +
+            `$fileList = New-Object System.Collections.Specialized.StringCollection; ` +
+            `$fileList.Add('${escapedPath}'); ` +
+            `$dataObject.SetFileDropList($fileList); ` +
+            `$dataObject.SetText('${escapedPath}'); ` +
+            `[System.Windows.Forms.Clipboard]::SetDataObject($dataObject, $true);`;
+          
+          exec(`powershell -NoProfile -Command "${psCommand}"`, (error, stdout, stderr) => {
+            if (error) {
+              console.error('Failed to copy file via PowerShell:', error);
+              try {
+                const fs = require('fs');
+                let logStr = `\n[${new Date().toISOString()}] === POWERSHELL COPY ERROR ===\n`;
+                logStr += `FilePath: ${filePath}\n`;
+                logStr += `Error: ${error.message}\n`;
+                logStr += `Stderr: ${stderr}\n`;
+                logStr += `=== END POWERSHELL ERROR ===\n`;
+                fs.appendFileSync('d:\\testCode\\screenshotStorage\\clipboard_diagnosis.log', logStr);
+              } catch (logErr) {
+                console.error('Failed to write ps error log:', logErr);
+              }
+              resolve(false);
+            } else {
+              resolve(true);
+            }
+          });
+        });
+      } else {
+        // 其他平台使用 Electron clipboard 原子写入混合内容
+        clipboard.write({
+          text: filePath,
+          ...({
+            'text/uri-list': Buffer.from(`file:///${filePath.replace(/\\/g, '/')}`),
+            'file-paths': Buffer.from(JSON.stringify([filePath]))
+          } as any)
+        });
+        return true;
+      }
+    } catch (err) {
+      console.error('Failed to copy file to clipboard:', err);
+      return false;
+    }
+  });
 }
+

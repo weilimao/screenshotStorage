@@ -4,11 +4,21 @@ import { ImageRecord, AppConfig } from '../../shared/types';
 const btnToggleFloat = document.getElementById('btn-toggle-float') as HTMLButtonElement;
 const floatBtnText = document.getElementById('float-btn-text') as HTMLSpanElement;
 const btnAddFolder = document.getElementById('btn-add-folder') as HTMLButtonElement;
+const btnChangeStorage = document.getElementById('btn-change-storage') as HTMLButtonElement;
+const storagePathText = document.getElementById('storage-path-text') as HTMLDivElement;
 const btnClearAll = document.getElementById('btn-clear-all') as HTMLButtonElement;
 const watchFolderList = document.getElementById('watch-folder-list') as HTMLDivElement;
 const imageGrid = document.getElementById('image-grid') as HTMLDivElement;
 const emptyState = document.getElementById('empty-state') as HTMLDivElement;
 const toast = document.getElementById('toast') as HTMLDivElement;
+
+// 分类 Tabs 相关 DOM
+const categoryTabs = document.getElementById('category-tabs') as HTMLDivElement;
+const countAllEl = document.getElementById('count-all') as HTMLSpanElement;
+const countImageEl = document.getElementById('count-image') as HTMLSpanElement;
+const countVideoEl = document.getElementById('count-video') as HTMLSpanElement;
+
+let currentTab: 'all' | 'image' | 'video' = 'all';
 
 // 主题切换 DOM
 const btnToggleTheme = document.getElementById('btn-toggle-theme') as HTMLButtonElement;
@@ -17,6 +27,11 @@ const themeText = document.getElementById('theme-text') as HTMLSpanElement;
 
 // 开机自启 DOM
 const switchAutostart = document.getElementById('switch-autostart') as HTMLInputElement;
+
+// 保留时长与分类清理 DOM
+const selectRetention = document.getElementById('select-retention') as HTMLSelectElement;
+const btnClearImages = document.getElementById('btn-clear-images') as HTMLButtonElement;
+const btnClearVideos = document.getElementById('btn-clear-videos') as HTMLButtonElement;
 
 // 大图预览相关 DOM
 const previewModal = document.getElementById('preview-modal') as HTMLDivElement;
@@ -47,25 +62,38 @@ function createImageCard(record: ImageRecord): HTMLDivElement {
   card.className = 'image-card';
   card.id = `card-${record.id}`;
 
-  // 由于 Electron 会拦截并允许本地文件直接读取（如果没有特殊安全限制），
-  // 在 Electron 预加载安全环境中，可以直接将 src 设为绝对路径。
-  // 注意：在 Electron 中，直接读取本地文件可能需要 `file://` 协议，
-  // 为了安全，Electron 在 9+ 限制了从非 file:// 页面读取 file:// 协议，
-  // 但由于我们就是本地的 HTML 文件，所以直接用 `record.filepath` 是完全被允许的。
+  const ext = record.filename.split('.').pop()?.toLowerCase();
+  const isVideo = ['mp4', 'mov', 'avi', 'mkv', 'flv', 'wmv'].includes(ext || '');
   const imageSrc = record.filepath;
 
+  let mediaHtml = '';
+  let formatBadge = 'shot';
+
+  if (isVideo) {
+    mediaHtml = `
+      <video src="${imageSrc}" muted loop autoplay style="width: 100%; height: 100%; object-fit: cover; pointer-events: none;"></video>
+      <div style="position: absolute; top: 8px; left: 8px; background: rgba(0,0,0,0.6); padding: 2px 6px; border-radius: 4px; font-size: 10px; color: #fff; font-weight: 600; display: flex; align-items: center; gap: 2px; z-index: 2;">
+        <span>🎬</span> 视频
+      </div>
+    `;
+    formatBadge = 'video';
+  } else {
+    mediaHtml = `<img src="${imageSrc}" alt="Screenshot">`;
+  }
+
+  const fileUrl = `path:${record.filepath.replace(/\\/g, '/')}`;
   card.innerHTML = `
-    <div class="image-wrapper" draggable="true">
-      <img src="${imageSrc}" alt="Screenshot">
+    <a href="${fileUrl}" class="image-wrapper" draggable="true" style="display: block; text-decoration: none;">
+      ${mediaHtml}
       <div class="drag-overlay">
         <span class="drag-icon-ui">🖱️</span>
         <span class="drag-text">拖动到终端</span>
       </div>
-    </div>
+    </a>
     <div class="card-info">
       <div class="card-meta">
         <span class="card-time">⏰ ${formatTime(record.createdAt)}</span>
-        <span class="card-size">${record.filename.split('_')[0]}</span>
+        <span class="card-size">${formatBadge}</span>
       </div>
       <div class="card-actions">
         <button class="btn-card btn-preview">
@@ -81,34 +109,53 @@ function createImageCard(record: ImageRecord): HTMLDivElement {
     </div>
   `;
 
-  // 绑定双击预览图片
-  const cardImg = card.querySelector('img') as HTMLImageElement;
-  cardImg.style.cursor = 'zoom-in';
-  cardImg.addEventListener('dblclick', () => {
-    openPreview(record.filepath);
-  });
-
   // 绑定预览按钮点击
   const previewBtn = card.querySelector('.btn-preview') as HTMLButtonElement;
   previewBtn.addEventListener('click', () => {
     openPreview(record.filepath);
   });
 
-  // 绑定原生拖动事件
-  const imageWrapper = card.querySelector('.image-wrapper') as HTMLDivElement;
-  imageWrapper.addEventListener('dragstart', (e) => {
-    e.preventDefault(); // 阻止浏览器默认拖拽行为
-    window.electronAPI.startDrag(record.filepath);
+  // 绑定原生拖动事件与双击预览
+  const imageWrapper = card.querySelector('.image-wrapper') as HTMLAnchorElement;
+  imageWrapper.addEventListener('click', (e) => {
+    e.preventDefault(); // 阻止 a 标签点击跳转
+  });
+  imageWrapper.style.cursor = 'zoom-in';
+
+  imageWrapper.addEventListener('dblclick', () => {
+    openPreview(record.filepath);
   });
 
-  // 绑定复制路径事件
+  imageWrapper.addEventListener('dragstart', (e) => {
+    const ext = record.filename.split('.').pop()?.toLowerCase();
+    const isVideo = ['mp4', 'mov', 'avi', 'mkv', 'flv', 'wmv'].includes(ext || '');
+
+    if (isVideo) {
+      e.preventDefault();
+      // 复制绝对路径到剪贴板
+      window.electronAPI.copyFileToClipboard(record.filepath);
+      // 显示提示消息
+      showToast('已复制视频路径，可以直接粘贴');
+      // 启动原生拖拽以展示拖拽状态
+      window.electronAPI.startDrag(record.filepath);
+    } else {
+      e.preventDefault(); // 阻止浏览器默认拖拽行为
+      window.electronAPI.startDrag(record.filepath);
+    }
+  });
+
+  // 绑定复制文件及路径事件
   const copyBtn = card.querySelector('.btn-copy-path') as HTMLButtonElement;
   copyBtn.addEventListener('click', async () => {
     try {
-      await navigator.clipboard.writeText(record.filepath);
-      showToast('路径已复制到剪贴板！');
+      const success = await window.electronAPI.copyFileToClipboard(record.filepath);
+      if (success) {
+        showToast('已复制文件及路径');
+      } else {
+        showToast('复制失败');
+      }
     } catch (err) {
-      console.error('Failed to copy text: ', err);
+      console.error('Failed to copy file: ', err);
       showToast('复制失败');
     }
   });
@@ -122,16 +169,47 @@ function createImageCard(record: ImageRecord): HTMLDivElement {
   return card;
 }
 
+// 判断文件是否为视频
+function isRecordVideo(record: ImageRecord): boolean {
+  const ext = record.filename.split('.').pop()?.toLowerCase();
+  return ['mp4', 'mov', 'avi', 'mkv', 'flv', 'wmv'].includes(ext || '');
+}
+
 // 刷新图片展示网格
 async function loadImages() {
   const images = await window.electronAPI.getImages();
   imageGrid.innerHTML = '';
   
-  if (images.length === 0) {
+  // 1. 统计数量
+  let imageCount = 0;
+  let videoCount = 0;
+  images.forEach(img => {
+    if (isRecordVideo(img)) {
+      videoCount++;
+    } else {
+      imageCount++;
+    }
+  });
+
+  // 更新气泡显示数量
+  if (countAllEl) countAllEl.innerText = images.length.toString();
+  if (countImageEl) countImageEl.innerText = imageCount.toString();
+  if (countVideoEl) countVideoEl.innerText = videoCount.toString();
+
+  // 2. 根据 Tab 过滤列表
+  const filtered = images.filter(img => {
+    if (currentTab === 'all') return true;
+    const isVid = isRecordVideo(img);
+    if (currentTab === 'video') return isVid;
+    if (currentTab === 'image') return !isVid;
+    return true;
+  });
+  
+  if (filtered.length === 0) {
     emptyState.style.display = 'flex';
   } else {
     emptyState.style.display = 'none';
-    images.forEach(img => {
+    filtered.forEach(img => {
       imageGrid.appendChild(createImageCard(img));
     });
   }
@@ -166,6 +244,13 @@ function renderWatchFolders(folders: string[]) {
   });
 }
 
+function updateStoragePathDisplay(path: string) {
+  if (storagePathText) {
+    storagePathText.innerText = path;
+    storagePathText.title = path;
+  }
+}
+
 // 刷新配置
 async function loadConfig() {
   appConfig = await window.electronAPI.getConfig();
@@ -174,6 +259,10 @@ async function loadConfig() {
   if (switchAutostart) {
     switchAutostart.checked = appConfig.openAtLogin || false;
   }
+  if (selectRetention) {
+    selectRetention.value = (appConfig.retentionDays !== undefined ? appConfig.retentionDays : 14).toString();
+  }
+  updateStoragePathDisplay(appConfig.storagePath || '');
 }
 
 // 刷新浮窗按钮状态
@@ -203,7 +292,37 @@ function applyTheme(theme?: 'dark' | 'light') {
 }
 
 function openPreview(filePath: string) {
-  previewImage.src = filePath;
+  const ext = filePath.split('.').pop()?.toLowerCase();
+  const isVideo = ['mp4', 'mov', 'avi', 'mkv', 'flv', 'wmv'].includes(ext || '');
+
+  const imgEl = document.getElementById('preview-image') as HTMLImageElement;
+  let videoEl = document.getElementById('preview-video') as HTMLVideoElement;
+
+  if (!videoEl) {
+    videoEl = document.createElement('video');
+    videoEl.id = 'preview-video';
+    videoEl.style.maxWidth = '90%';
+    videoEl.style.maxHeight = '85%';
+    videoEl.style.borderRadius = '12px';
+    videoEl.style.boxShadow = '0 20px 50px rgba(0, 0, 0, 0.6)';
+    videoEl.style.outline = 'none';
+    videoEl.style.border = '1px solid rgba(255, 255, 255, 0.08)';
+    videoEl.controls = true;
+    imgEl.parentNode?.appendChild(videoEl);
+  }
+
+  if (isVideo) {
+    imgEl.style.display = 'none';
+    videoEl.style.display = 'block';
+    videoEl.src = filePath;
+    videoEl.play().catch(err => console.log('Autoplay failed:', err));
+  } else {
+    videoEl.style.display = 'none';
+    videoEl.pause();
+    imgEl.style.display = 'block';
+    imgEl.src = filePath;
+  }
+
   previewModal.classList.add('show');
 }
 
@@ -228,18 +347,25 @@ async function init() {
     openPreview(filePath);
   });
 
-  // 绑定预览模态框关闭事件
-  previewCloseBtn.addEventListener('click', () => {
+  const closePreview = () => {
     previewModal.classList.remove('show');
-  });
+    const videoEl = document.getElementById('preview-video') as HTMLVideoElement;
+    if (videoEl) {
+      videoEl.pause();
+      videoEl.src = '';
+    }
+  };
+
+  // 绑定预览模态框关闭事件
+  previewCloseBtn.addEventListener('click', closePreview);
   previewModal.addEventListener('click', (e) => {
     if (e.target === previewModal) {
-      previewModal.classList.remove('show');
+      closePreview();
     }
   });
   window.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
-      previewModal.classList.remove('show');
+      closePreview();
     }
   });
 
@@ -252,6 +378,28 @@ async function init() {
   btnToggleFloat.addEventListener('click', async () => {
     await window.electronAPI.toggleFloatWindow();
     await updateFloatButtonState();
+  });
+
+  btnChangeStorage.addEventListener('click', async () => {
+    const folder = await window.electronAPI.selectFolder('选择截图数据存放目录');
+    if (folder) {
+      if (folder === appConfig.storagePath) {
+        showToast('该目录已是当前存放位置');
+        return;
+      }
+      try {
+        showToast('正在迁移物理文件，请稍候...');
+        const success = await window.electronAPI.updateConfig({ customStoragePath: folder });
+        if (success) {
+          showToast('存放位置修改成功，数据已迁移！');
+        } else {
+          showToast('存放位置修改失败');
+        }
+      } catch (err) {
+        console.error('Failed to change storage directory:', err);
+        showToast('修改失败，发生未知错误');
+      }
+    }
   });
 
   btnAddFolder.addEventListener('click', async () => {
@@ -267,48 +415,73 @@ async function init() {
     }
   });
 
+  if (selectRetention) {
+    selectRetention.addEventListener('change', async () => {
+      const val = parseInt(selectRetention.value, 10);
+      await window.electronAPI.updateConfig({ retentionDays: val });
+      showToast('保留时长已更新！');
+    });
+  }
+
+  if (btnClearImages) {
+    btnClearImages.addEventListener('click', async () => {
+      if (confirm('确定要清空所有已保存的截图图片吗？此操作不可逆！')) {
+        await window.electronAPI.clearAll('image');
+        showToast('已清空所有图片');
+      }
+    });
+  }
+
+  if (btnClearVideos) {
+    btnClearVideos.addEventListener('click', async () => {
+      if (confirm('确定要清空所有已保存的暂存视频吗？此操作不可逆！')) {
+        await window.electronAPI.clearAll('video');
+        showToast('已清空所有视频');
+      }
+    });
+  }
+
   btnClearAll.addEventListener('click', async () => {
-    if (confirm('确定要清空所有已保存的截图吗？此操作不可逆！')) {
-      await window.electronAPI.clearAll();
-      showToast('暂存箱已清空');
+    if (confirm('确定要一键清空暂存箱里的所有截图和视频吗？此操作不可逆！')) {
+      await window.electronAPI.clearAll('all');
+      showToast('暂存箱已全部清空');
     }
   });
 
   // 3. 注册主进程推送事件的监听
-  window.electronAPI.onNewImage((record) => {
-    // 隐藏空状态，并在网格头部插入卡片
-    emptyState.style.display = 'none';
-    const card = createImageCard(record);
-    
-    // 如果有旧的，先将其在 UI 里移至首位，若不存在则创建
-    const existingCard = document.getElementById(`card-${record.id}`);
-    if (existingCard) {
-      existingCard.remove();
-    }
-    imageGrid.insertBefore(card, imageGrid.firstChild);
+  window.electronAPI.onNewImage(async (record) => {
+    await loadImages();
   });
 
-  window.electronAPI.onImageDeleted((id) => {
-    if (id === 'all') {
-      imageGrid.innerHTML = '';
-      emptyState.style.display = 'flex';
-    } else {
-      const card = document.getElementById(`card-${id}`);
-      if (card) {
-        card.remove();
-      }
-      if (imageGrid.children.length === 0) {
-        emptyState.style.display = 'flex';
-      }
-    }
+  window.electronAPI.onImageDeleted(async (id) => {
+    await loadImages();
   });
 
-  window.electronAPI.onConfigChanged((config) => {
+  // 4. 绑定多分类 Tab 点击事件
+  if (categoryTabs) {
+    const tabButtons = categoryTabs.querySelectorAll('.tab-btn');
+    tabButtons.forEach(btn => {
+      btn.addEventListener('click', () => {
+        tabButtons.forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        const type = btn.getAttribute('data-type') as 'all' | 'image' | 'video';
+        currentTab = type || 'all';
+        loadImages();
+      });
+    });
+  }
+
+  window.electronAPI.onConfigChanged(async (config) => {
+    const storagePathChanged = config.storagePath !== appConfig.storagePath;
     appConfig = config;
     applyTheme(config.theme);
     renderWatchFolders(config.watchFolders);
     if (switchAutostart) {
       switchAutostart.checked = config.openAtLogin || false;
+    }
+    updateStoragePathDisplay(config.storagePath || '');
+    if (storagePathChanged) {
+      await loadImages();
     }
   });
 

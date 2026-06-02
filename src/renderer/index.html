@@ -44,6 +44,26 @@
           </div>
         </div>
 
+        <!-- 保留时长设置 -->
+        <div class="control-group">
+          <label class="section-title">⏱️ 自动清理保留时长</label>
+          <select id="select-retention" class="select-field">
+            <option value="3">3 天</option>
+            <option value="7">7 天 (1周)</option>
+            <option value="14">14 天 (2周)</option>
+            <option value="30">30 天 (1个月)</option>
+            <option value="0">永久保存</option>
+          </select>
+        </div>
+
+        <div class="control-group">
+          <label class="section-title">数据存放目录</label>
+          <div class="storage-path-display" id="storage-path-text" title="正在获取...">正在获取...</div>
+          <button id="btn-change-storage" class="btn btn-secondary btn-sm">
+            <span>📁</span> 更改存放位置
+          </button>
+        </div>
+
         <div class="control-group">
           <label class="section-title">微信截图文件夹监听</label>
           <div class="folder-path-display" id="watch-folder-list">
@@ -55,9 +75,15 @@
         </div>
       </div>
 
-      <div class="control-group footer">
+      <div class="control-group footer" style="display: flex; flex-direction: column; gap: 8px;">
+        <button id="btn-clear-images" class="btn btn-secondary btn-sm" style="color: var(--danger-color); border-color: rgba(255, 82, 82, 0.2);">
+          <span>🖼️</span> 清空所有图片
+        </button>
+        <button id="btn-clear-videos" class="btn btn-secondary btn-sm" style="color: var(--danger-color); border-color: rgba(255, 82, 82, 0.2);">
+          <span>🎥</span> 清空所有视频
+        </button>
         <button id="btn-clear-all" class="btn btn-danger btn-sm">
-          <span>🗑️</span> 清空所有截图
+          <span>🗑️</span> 一键全部清空
         </button>
         <div class="app-version">v1.0.0 · 智能中转器</div>
       </div>
@@ -72,6 +98,15 @@
           已开启剪贴板监听
         </div>
       </header>
+
+      <!-- 新增：多分类选项卡 -->
+      <div class="category-container">
+        <div class="category-tabs" id="category-tabs">
+          <button class="tab-btn active" data-type="all">全部 <span class="badge" id="count-all">0</span></button>
+          <button class="tab-btn" data-type="image">图片 <span class="badge" id="count-image">0</span></button>
+          <button class="tab-btn" data-type="video">视频 <span class="badge" id="count-video">0</span></button>
+        </div>
+      </div>
       
       <!-- 截图列表 -->
       <div class="image-grid-container">

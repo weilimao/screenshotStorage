@@ -1,0 +1,7 @@
+Found 1 diagnosis entries:
+
+Entry #1: 
+  Available Formats: text/uri-list
+    Format [text/uri-list] direct read: ""
+    Format [text/uri-list] buffer length: 0
+

@@ -4,10 +4,10 @@ const { IPC_CHANNELS } = require('../../shared/constants');
 contextBridge.exposeInMainWorld('electronAPI', {
   getImages: () => ipcRenderer.invoke(IPC_CHANNELS.GET_IMAGES),
   deleteImage: (id: string) => ipcRenderer.invoke(IPC_CHANNELS.DELETE_IMAGE, id),
-  clearAll: () => ipcRenderer.invoke(IPC_CHANNELS.CLEAR_ALL),
+  clearAll: (type?: 'all' | 'image' | 'video') => ipcRenderer.invoke(IPC_CHANNELS.CLEAR_ALL, type),
   getConfig: () => ipcRenderer.invoke(IPC_CHANNELS.GET_CONFIG),
   updateConfig: (config: any) => ipcRenderer.invoke(IPC_CHANNELS.UPDATE_CONFIG, config),
-  selectFolder: () => ipcRenderer.invoke(IPC_CHANNELS.SELECT_FOLDER),
+  selectFolder: (title?: string) => ipcRenderer.invoke(IPC_CHANNELS.SELECT_FOLDER, title),
   toggleFloatWindow: () => ipcRenderer.invoke(IPC_CHANNELS.TOGGLE_FLOAT_WINDOW),
   getFloatWindowState: () => ipcRenderer.invoke(IPC_CHANNELS.FLOAT_WINDOW_STATE),
   
@@ -16,6 +16,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   resizeFloatWindow: (width: number, height: number) => ipcRenderer.send('window:resize-float', width, height),
   openFile: (filePath: string) => ipcRenderer.invoke('file:open', filePath),
   triggerMainPreview: (filePath: string) => ipcRenderer.invoke('window:trigger-preview', filePath),
+  copyFileToClipboard: (filePath: string) => ipcRenderer.invoke('file:copy-to-clipboard', filePath),
 
   // 主进程向渲染进程通知的监听器
   onNewImage: (callback: (record: any) => void) => {

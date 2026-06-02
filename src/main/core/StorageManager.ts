@@ -123,18 +123,84 @@ export class StorageManager implements IStorageManager {
     }
   }
 
-  public async clearAll(): Promise<void> {
+  private isRecordVideo(record: ImageRecord): boolean {
+    const ext = record.filename.split('.').pop()?.toLowerCase();
+    return ['mp4', 'mov', 'avi', 'mkv', 'flv', 'wmv'].includes(ext || '');
+  }
+
+  public async clearAll(type?: 'all' | 'image' | 'video'): Promise<void> {
+    const toKeep: ImageRecord[] = [];
     for (const record of this.records) {
-      try {
-        if (fs.existsSync(record.filepath)) {
-          fs.unlinkSync(record.filepath);
+      const isVid = this.isRecordVideo(record);
+      const shouldDelete = !type || type === 'all' || (type === 'video' && isVid) || (type === 'image' && !isVid);
+
+      if (shouldDelete) {
+        try {
+          if (fs.existsSync(record.filepath)) {
+            fs.unlinkSync(record.filepath);
+          }
+        } catch (err) {
+          console.error(`Failed to delete file ${record.filepath}:`, err);
         }
-      } catch (err) {
-        console.error(`Failed to delete file ${record.filepath}:`, err);
+      } else {
+        toKeep.push(record);
       }
     }
-    this.records = [];
+    this.records = toKeep;
     await this.saveMetadata();
+  }
+
+  public async updateStorageDir(newDir: string): Promise<void> {
+    if (newDir === this.storageDir) {
+      return;
+    }
+
+    // 确保存储目录存在
+    if (!fs.existsSync(newDir)) {
+      fs.mkdirSync(newDir, { recursive: true });
+    }
+
+    const oldDir = this.storageDir;
+    const oldMetadataPath = this.metadataPath;
+
+    // 1. 迁移所有记录中的图片物理文件
+    for (const record of this.records) {
+      if (fs.existsSync(record.filepath)) {
+        const newFilepath = path.join(newDir, record.filename);
+        try {
+          // 尝试重命名/移动物理文件
+          try {
+            fs.renameSync(record.filepath, newFilepath);
+          } catch (renameErr) {
+            // 降级处理跨磁盘分区移动
+            fs.copyFileSync(record.filepath, newFilepath);
+            fs.unlinkSync(record.filepath);
+          }
+          // 更新绝对路径
+          record.filepath = path.resolve(newFilepath);
+        } catch (err) {
+          console.error(`Failed to migrate file from ${record.filepath} to ${newFilepath}:`, err);
+        }
+      }
+    }
+
+    // 2. 更新成员变量为新的目录
+    this.storageDir = newDir;
+    this.metadataPath = path.join(newDir, 'metadata.json');
+
+    // 3. 写入新的元数据文件
+    await this.saveMetadata();
+
+    // 4. 清理旧目录下的元数据文件
+    if (fs.existsSync(oldMetadataPath)) {
+      try {
+        fs.unlinkSync(oldMetadataPath);
+      } catch (err) {
+        console.error(`Failed to delete old metadata file ${oldMetadataPath}:`, err);
+      }
+    }
+
+    console.log(`Successfully migrated storage directory from ${oldDir} to ${newDir}`);
   }
 
   private async saveMetadata(): Promise<void> {
@@ -147,15 +213,16 @@ export class StorageManager implements IStorageManager {
 
   private async autoCleanup(): Promise<void> {
     const config = this.configManager.getConfig();
-    const maxImages = config.maxImages || 100;
-    const retentionMs = (config.retentionDays || 14) * 24 * 60 * 60 * 1000;
+    const retentionDays = config.retentionDays !== undefined ? config.retentionDays : 14;
+    const hasTimeLimit = retentionDays > 0; // 0 表示永久保存
+    const retentionMs = retentionDays * 24 * 60 * 60 * 1000;
     const now = Date.now();
     let changed = false;
 
     // 1. 过期清理
     const validTimeRecords: ImageRecord[] = [];
     for (const record of this.records) {
-      if (now - record.createdAt > retentionMs) {
+      if (hasTimeLimit && (now - record.createdAt > retentionMs)) {
         try {
           if (fs.existsSync(record.filepath)) {
             fs.unlinkSync(record.filepath);
@@ -168,13 +235,28 @@ export class StorageManager implements IStorageManager {
         validTimeRecords.push(record);
       }
     }
-    this.records = validTimeRecords;
 
-    // 2. 超量清理
-    if (this.records.length > maxImages) {
-      const toDelete = this.records.slice(maxImages);
-      this.records = this.records.slice(0, maxImages);
+    // 2. 超量清理：图片限制最近 100 张，视频限制最近 50 个
+    const videos: ImageRecord[] = [];
+    const images: ImageRecord[] = [];
 
+    // validTimeRecords 已是最新在前 (unshift 写入)
+    for (const record of validTimeRecords) {
+      if (this.isRecordVideo(record)) {
+        videos.push(record);
+      } else {
+        images.push(record);
+      }
+    }
+
+    const keptVideos = videos.slice(0, 50);
+    const toDeleteVideos = videos.slice(50);
+
+    const keptImages = images.slice(0, 100);
+    const toDeleteImages = images.slice(100);
+
+    const toDelete = [...toDeleteVideos, ...toDeleteImages];
+    if (toDelete.length > 0) {
       for (const record of toDelete) {
         try {
           if (fs.existsSync(record.filepath)) {
@@ -186,6 +268,9 @@ export class StorageManager implements IStorageManager {
       }
       changed = true;
     }
+
+    // 重新组合并按时间重新排序，确保全局最新在前
+    this.records = [...keptVideos, ...keptImages].sort((a, b) => b.createdAt - a.createdAt);
 
     if (changed) {
       await this.saveMetadata();
