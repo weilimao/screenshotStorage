@@ -202,6 +202,20 @@ body.light-theme .toggle-container {
   background: rgba(0, 0, 0, 0.02);
 }
 
+.silent-start-group {
+  margin-top: -16px;
+  margin-bottom: 8px;
+}
+
+.silent-start-group .toggle-container {
+  padding-left: 24px;
+}
+
+.toggle-container.disabled {
+  opacity: 0.5;
+  pointer-events: none;
+}
+
 .toggle-label {
   font-size: 13px;
   font-weight: 500;

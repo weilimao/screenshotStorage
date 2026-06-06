@@ -11,6 +11,7 @@ export class ClipboardMonitor implements IClipboardMonitor {
   private lastImageBuffer: Buffer | null = null;
   private lastFilePaths: string = '';
   private lastDiagFormats: string = '';
+  private storageDir: string = '';
   
   private imageCapturedCallback: ((buf: Buffer) => void) | null = null;
   private fileCapturedCallback: ((filePath: string) => void) | null = null;
@@ -18,6 +19,33 @@ export class ClipboardMonitor implements IClipboardMonitor {
   private watcher: chokidar.FSWatcher | null = null;
 
   constructor(private configManager: ConfigManager) {}
+
+  public setStorageDir(dir: string): void {
+    try {
+      this.storageDir = path.resolve(dir);
+    } catch (err) {
+      console.error('Failed to resolve storage directory path in ClipboardMonitor:', err);
+    }
+  }
+
+  private filterStorageDirPaths(paths: string[]): string[] {
+    if (!this.storageDir || paths.length === 0) {
+      return paths;
+    }
+    return paths.filter(p => {
+      try {
+        let absPath = path.resolve(p);
+        let compareDir = this.storageDir;
+        if (process.platform === 'win32') {
+          absPath = absPath.toLowerCase();
+          compareDir = compareDir.toLowerCase();
+        }
+        return !absPath.startsWith(compareDir);
+      } catch {
+        return true;
+      }
+    });
+  }
 
   public onImageCaptured(callback: (imageBuffer: Buffer) => void): void {
     this.imageCapturedCallback = callback;

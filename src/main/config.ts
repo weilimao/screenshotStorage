@@ -14,7 +14,8 @@ export class ConfigManager {
       retentionDays: 14,
       watchFolders: [],
       showFloatWindowOnStart: false,
-      theme: 'light'
+      theme: 'light',
+      silentStart: false
     };
 
     try {

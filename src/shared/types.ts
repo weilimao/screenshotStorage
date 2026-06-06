@@ -10,6 +10,7 @@ export interface IClipboardMonitor {
   stop(): void;
   onImageCaptured(callback: (imageBuffer: Buffer) => void): void;
   onFileCaptured(callback: (filePath: string) => void): void;
+  setStorageDir(dir: string): void;
 }
 
 export interface IStorageManager {
@@ -24,7 +25,7 @@ export interface IStorageManager {
 }
 
 export interface IWindowManager {
-  createMainWindow(): void;
+  createMainWindow(showInitially?: boolean): void;
   createFloatWindow(): void;
   closeFloatWindow(): void;
   sendToMainWindow(channel: string, ...args: any[]): void;
@@ -40,6 +41,7 @@ export interface AppConfig {
   showFloatWindowOnStart?: boolean;
   theme?: 'dark' | 'light';
   openAtLogin?: boolean;
+  silentStart?: boolean;
   customStoragePath?: string;
   storagePath?: string;
 }

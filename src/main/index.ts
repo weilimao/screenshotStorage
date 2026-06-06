@@ -15,7 +15,7 @@ let clipboardMonitor: ClipboardMonitor;
 
 const isDev = !app.isPackaged;
 
-// 封装 Windows 平台图片与文件混合写入（不含 text 格式，避免死循环及 IDE 粘贴地址问题）
+// 封装 Windows 平台图片与文件混合写入（支持 text/plain 纯文本路径以在终端粘贴）
 function writeImageAndFileDropToClipboardWin32(filePath: string): Promise<boolean> {
   return new Promise((resolve) => {
     const escapedPath = filePath.replace(/'/g, "''");
@@ -27,6 +27,7 @@ function writeImageAndFileDropToClipboardWin32(filePath: string): Promise<boolea
       `$dataObject.SetFileDropList($fileList); ` +
       `$img = [System.Drawing.Image]::FromFile('${escapedPath}'); ` +
       `$dataObject.SetImage($img); ` +
+      `$dataObject.SetText('${escapedPath}'); ` +
       `[System.Windows.Forms.Clipboard]::SetDataObject($dataObject, $true);`;
     
     exec(`powershell -NoProfile -Command "${psCommand}"`, (error) => {
@@ -64,6 +65,7 @@ function initApp() {
   storageManager = new StorageManager(storageDir, configManager);
   windowManager = new WindowManager(preloadPath, mainHtmlPath, floatHtmlPath);
   clipboardMonitor = new ClipboardMonitor(configManager);
+  clipboardMonitor.setStorageDir(storageDir);
 
   // 3. 异步初始化存储管理器
   storageManager.init().then(() => {
@@ -90,6 +92,7 @@ function initApp() {
         const { nativeImage } = require('electron');
         const img = nativeImage.createFromBuffer(buffer);
         clipboard.write({
+          text: record.filepath,
           image: img,
           ...({
             'file-paths': [record.filepath]
@@ -126,6 +129,7 @@ function initApp() {
           const { nativeImage } = require('electron');
           const img = nativeImage.createFromPath(record.filepath);
           clipboard.write({
+            text: record.filepath,
             image: img,
             ...({
               'file-paths': [record.filepath]
@@ -145,12 +149,28 @@ function initApp() {
   });
 
   // 6. 启动监控与创建主窗口
-  clipboardMonitor.start();
-  windowManager.createMainWindow();
-
-  // 7. 记忆功能：若上次开启了悬浮窗，在启动时自动拉起
   const config = configManager.getConfig();
-  if (config.showFloatWindowOnStart) {
+  let isSilentStart = false;
+  if (config.openAtLogin && config.silentStart) {
+    if (process.argv.includes('--hidden')) {
+      isSilentStart = true;
+    } else {
+      try {
+        const loginSettings = app.getLoginItemSettings();
+        if (loginSettings.wasOpenedAsHidden) {
+          isSilentStart = true;
+        }
+      } catch (err) {
+        console.error('Failed to get login settings on startup:', err);
+      }
+    }
+  }
+
+  clipboardMonitor.start();
+  windowManager.createMainWindow(!isSilentStart);
+
+  // 7. 记忆功能：若上次开启了悬浮窗且不是静默启动，在启动时自动拉起
+  if (config.showFloatWindowOnStart && !isSilentStart) {
     setTimeout(() => {
       windowManager.createFloatWindow();
     }, 600);

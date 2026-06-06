@@ -61,6 +61,7 @@ export function registerIpcHandlers(
     if (newConfig.customStoragePath && newConfig.customStoragePath !== storageManager.getStoragePath()) {
       try {
         await storageManager.updateStorageDir(newConfig.customStoragePath);
+        clipboardMonitor.setStorageDir(newConfig.customStoragePath);
       } catch (err) {
         console.error('Failed to update storage directory:', err);
       }
@@ -69,15 +70,21 @@ export function registerIpcHandlers(
     configManager.updateConfig(newConfig);
 
     // 处理开机自启
-    if (newConfig.openAtLogin !== undefined) {
+    if (newConfig.openAtLogin !== undefined || newConfig.silentStart !== undefined) {
       try {
+        const currentConfig = configManager.getConfig();
+        const openAtLogin = newConfig.openAtLogin !== undefined ? newConfig.openAtLogin : currentConfig.openAtLogin;
+        const silentStart = newConfig.silentStart !== undefined ? newConfig.silentStart : currentConfig.silentStart;
+
         if (app.isPackaged) {
           app.setLoginItemSettings({
-            openAtLogin: newConfig.openAtLogin,
+            openAtLogin: openAtLogin,
             path: process.execPath,
+            args: openAtLogin && silentStart ? ['--hidden'] : [],
+            openAsHidden: silentStart,
           });
         } else {
-          console.log(`[Dev] Mock setLoginItemSettings to ${newConfig.openAtLogin}`);
+          console.log(`[Dev] Mock setLoginItemSettings to openAtLogin=${openAtLogin}, silentStart=${silentStart}`);
         }
       } catch (err) {
         console.error('Failed to set login item settings:', err);
@@ -236,8 +243,8 @@ export function registerIpcHandlers(
       if (process.platform === 'win32') {
         return new Promise<boolean>((resolve) => {
           const escapedPath = filePath.replace(/'/g, "''");
-          // Windows 平台下，利用 PowerShell 混合写入 FileDropList (文件物理路径) 与 Image (DIB图片格式)
-          // 不写入 Text 格式以保证在 IDE 中粘贴时优先粘贴为图片文件，同时支持终端粘贴物理路径。
+          // Windows 平台下，利用 PowerShell 混合写入 FileDropList (文件物理路径)、Image (DIB图片格式) 与 Text (物理路径文本)
+          // 以保证在终端中能正常粘贴为物理路径文本。
           const psCommand = `Add-Type -AssemblyName System.Windows.Forms; ` +
             `Add-Type -AssemblyName System.Drawing; ` +
             `$dataObject = New-Object System.Windows.Forms.DataObject; ` +
@@ -246,6 +253,7 @@ export function registerIpcHandlers(
             `$dataObject.SetFileDropList($fileList); ` +
             `$img = [System.Drawing.Image]::FromFile('${escapedPath}'); ` +
             `$dataObject.SetImage($img); ` +
+            `$dataObject.SetText('${escapedPath}'); ` +
             `[System.Windows.Forms.Clipboard]::SetDataObject($dataObject, $true);`;
           
           exec(`powershell -NoProfile -Command "${psCommand}"`, (error, stdout, stderr) => {
@@ -269,10 +277,11 @@ export function registerIpcHandlers(
           });
         });
       } else {
-        // 其他平台使用 Electron clipboard 写入混合图片和文件格式（去除了 text 字段）
+        // 其他平台使用 Electron clipboard 写入混合图片、文件和文本格式
         const { nativeImage } = require('electron');
         const img = nativeImage.createFromPath(filePath);
         clipboard.write({
+          text: filePath,
           image: img,
           ...({
             'text/uri-list': Buffer.from(`file:///${filePath.replace(/\\/g, '/')}`),

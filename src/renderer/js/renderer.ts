@@ -27,6 +27,21 @@ const themeText = document.getElementById('theme-text') as HTMLSpanElement;
 
 // 开机自启 DOM
 const switchAutostart = document.getElementById('switch-autostart') as HTMLInputElement;
+const switchSilentstart = document.getElementById('switch-silentstart') as HTMLInputElement;
+const containerSilentstart = document.getElementById('container-silentstart') as HTMLDivElement;
+
+// 自启动与静默启动 UI 联动
+function updateSilentStartUIState() {
+  if (!switchAutostart || !switchSilentstart || !containerSilentstart) return;
+  const autostartEnabled = switchAutostart.checked;
+  if (autostartEnabled) {
+    containerSilentstart.classList.remove('disabled');
+    switchSilentstart.disabled = false;
+  } else {
+    containerSilentstart.classList.add('disabled');
+    switchSilentstart.disabled = true;
+  }
+}
 
 // 保留时长与分类清理 DOM
 const selectRetention = document.getElementById('select-retention') as HTMLSelectElement;
@@ -259,6 +274,10 @@ async function loadConfig() {
   if (switchAutostart) {
     switchAutostart.checked = appConfig.openAtLogin || false;
   }
+  if (switchSilentstart) {
+    switchSilentstart.checked = appConfig.silentStart || false;
+  }
+  updateSilentStartUIState();
   if (selectRetention) {
     selectRetention.value = (appConfig.retentionDays !== undefined ? appConfig.retentionDays : 14).toString();
   }
@@ -339,6 +358,15 @@ async function init() {
     switchAutostart.addEventListener('change', async () => {
       const isChecked = switchAutostart.checked;
       await window.electronAPI.updateConfig({ openAtLogin: isChecked });
+      updateSilentStartUIState();
+    });
+  }
+
+  // 绑定静默启动切换
+  if (switchSilentstart) {
+    switchSilentstart.addEventListener('change', async () => {
+      const isChecked = switchSilentstart.checked;
+      await window.electronAPI.updateConfig({ silentStart: isChecked });
     });
   }
 
@@ -479,6 +507,10 @@ async function init() {
     if (switchAutostart) {
       switchAutostart.checked = config.openAtLogin || false;
     }
+    if (switchSilentstart) {
+      switchSilentstart.checked = config.silentStart || false;
+    }
+    updateSilentStartUIState();
     updateStoragePathDisplay(config.storagePath || '');
     if (storagePathChanged) {
       await loadImages();

@@ -108,11 +108,13 @@ export class WindowManager implements IWindowManager {
     }
   }
 
-  public createMainWindow(): void {
+  public createMainWindow(showInitially = true): void {
     if (this.mainWindow) {
-      this.mainWindow.setSkipTaskbar(false);
-      this.mainWindow.show();
-      this.mainWindow.focus();
+      if (showInitially) {
+        this.mainWindow.setSkipTaskbar(false);
+        this.mainWindow.show();
+        this.mainWindow.focus();
+      }
       return;
     }
 
@@ -127,6 +129,7 @@ export class WindowManager implements IWindowManager {
       height: 680,
       title: "截图智能暂存箱",
       show: false,
+      skipTaskbar: !showInitially,
       icon: fs.existsSync(iconPath) ? iconPath : undefined,
       webPreferences: {
         preload: this.preloadPath,
@@ -139,8 +142,7 @@ export class WindowManager implements IWindowManager {
     this.mainWindow.loadFile(this.mainHtmlPath);
 
     this.mainWindow.once('ready-to-show', () => {
-      if (this.mainWindow) {
-        this.mainWindow.setSkipTaskbar(false); // 初始显示在任务栏
+      if (this.mainWindow && showInitially) {
         this.mainWindow.show();
       }
     });
