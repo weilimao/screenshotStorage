@@ -204,6 +204,9 @@ export class WindowManager implements IWindowManager {
 
     // 在 Windows 上将其设置为屏幕保护程序级别的顶层
     this.floatWindow.setAlwaysOnTop(true, 'screen-saver');
+
+    // 新增：通知主窗口悬浮窗状态变更为已开启，确保 UI 状态一致
+    this.sendToMainWindow('window:float-state-changed', true);
   }
 
   public closeFloatWindow(): void {
