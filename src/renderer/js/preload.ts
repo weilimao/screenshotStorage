@@ -17,6 +17,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   openFile: (filePath: string) => ipcRenderer.invoke('file:open', filePath),
   triggerMainPreview: (filePath: string) => ipcRenderer.invoke('window:trigger-preview', filePath),
   copyFileToClipboard: (filePath: string) => ipcRenderer.invoke('file:copy-to-clipboard', filePath),
+  checkForUpdates: (manual: boolean) => ipcRenderer.invoke('app:check-for-updates', manual),
+  getAppVersion: () => ipcRenderer.invoke('app:get-version'),
 
   // 主进程向渲染进程通知的监听器
   onNewImage: (callback: (record: any) => void) => {

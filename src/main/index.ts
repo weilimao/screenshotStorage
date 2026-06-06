@@ -5,6 +5,7 @@ import { ConfigManager } from './config';
 import { StorageManager } from './core/StorageManager';
 import { WindowManager } from './core/WindowManager';
 import { ClipboardMonitor } from './core/ClipboardMonitor';
+import { UpdateManager } from './core/UpdateManager';
 import { registerIpcHandlers } from './api/ipcHandlers';
 import { IPC_CHANNELS } from '../shared/constants';
 
@@ -12,6 +13,7 @@ let configManager: ConfigManager;
 let storageManager: StorageManager;
 let windowManager: WindowManager;
 let clipboardMonitor: ClipboardMonitor;
+let updateManager: UpdateManager;
 
 const isDev = !app.isPackaged;
 
@@ -66,6 +68,7 @@ function initApp() {
   windowManager = new WindowManager(preloadPath, mainHtmlPath, floatHtmlPath);
   clipboardMonitor = new ClipboardMonitor(configManager);
   clipboardMonitor.setStorageDir(storageDir);
+  updateManager = new UpdateManager(windowManager);
 
   // 3. 异步初始化存储管理器
   storageManager.init().then(() => {
@@ -75,7 +78,7 @@ function initApp() {
   });
 
   // 4. 注册 IPC 消息处理
-  registerIpcHandlers(configManager, storageManager, windowManager, clipboardMonitor);
+  registerIpcHandlers(configManager, storageManager, windowManager, clipboardMonitor, updateManager);
 
   // 5. 绑定剪贴板/文件监听事件与窗口推送 (Event-Driven)
   clipboardMonitor.onImageCaptured(async (buffer) => {
@@ -175,6 +178,13 @@ function initApp() {
       windowManager.createFloatWindow();
     }, 600);
   }
+
+  // 8. 启动 5 秒后自动在后台检查更新
+  setTimeout(() => {
+    updateManager.checkForUpdates(false).catch(err => {
+      console.error('Auto update check failed silently:', err);
+    });
+  }, 5000);
 }
 
 app.whenReady().then(() => {

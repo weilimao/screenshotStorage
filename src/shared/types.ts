@@ -13,6 +13,11 @@ export interface IClipboardMonitor {
   setStorageDir(dir: string): void;
 }
 
+export interface IUpdateManager {
+  checkForUpdates(manual: boolean): Promise<boolean>;
+  getAppVersion(): string;
+}
+
 export interface IStorageManager {
   init(): Promise<void>;
   saveImage(imageBuffer: Buffer): Promise<ImageRecord>;
@@ -60,6 +65,8 @@ export interface IElectronAPI {
   openFile(filePath: string): Promise<boolean>;
   triggerMainPreview(filePath: string): Promise<boolean>;
   copyFileToClipboard(filePath: string): Promise<boolean>;
+  checkForUpdates(manual: boolean): Promise<boolean>;
+  getAppVersion(): Promise<string>;
   onNewImage(callback: (record: ImageRecord) => void): () => void;
   onImageDeleted(callback: (id: string) => void): () => void;
   onConfigChanged(callback: (config: AppConfig) => void): () => void;

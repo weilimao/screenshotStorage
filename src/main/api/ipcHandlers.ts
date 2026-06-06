@@ -5,6 +5,7 @@ import { ConfigManager } from '../config';
 import { StorageManager } from '../core/StorageManager';
 import { WindowManager } from '../core/WindowManager';
 import { ClipboardMonitor } from '../core/ClipboardMonitor';
+import { UpdateManager } from '../core/UpdateManager';
 
 function isImageFile(filePath: string): boolean {
   const ext = filePath.split('.').pop()?.toLowerCase();
@@ -15,7 +16,8 @@ export function registerIpcHandlers(
   configManager: ConfigManager,
   storageManager: StorageManager,
   windowManager: WindowManager,
-  clipboardMonitor: ClipboardMonitor
+  clipboardMonitor: ClipboardMonitor,
+  updateManager: UpdateManager
 ): void {
   // 1. 获取所有图片
   ipcMain.handle(IPC_CHANNELS.GET_IMAGES, async () => {
@@ -294,6 +296,16 @@ export function registerIpcHandlers(
       console.error('Failed to copy file to clipboard:', err);
       return false;
     }
+  });
+
+  // 14. 检查更新
+  ipcMain.handle('app:check-for-updates', async (_, manual: boolean) => {
+    return await updateManager.checkForUpdates(manual);
+  });
+
+  // 15. 获取版本号
+  ipcMain.handle('app:get-version', () => {
+    return updateManager.getAppVersion();
   });
 }
 

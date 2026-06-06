@@ -11,6 +11,8 @@ const watchFolderList = document.getElementById('watch-folder-list') as HTMLDivE
 const imageGrid = document.getElementById('image-grid') as HTMLDivElement;
 const emptyState = document.getElementById('empty-state') as HTMLDivElement;
 const toast = document.getElementById('toast') as HTMLDivElement;
+const btnCheckUpdate = document.getElementById('btn-check-update') as HTMLButtonElement;
+const appVersionText = document.getElementById('app-version-text') as HTMLSpanElement;
 
 // 分类 Tabs 相关 DOM
 const categoryTabs = document.getElementById('category-tabs') as HTMLDivElement;
@@ -528,6 +530,32 @@ async function init() {
       floatBtnText.innerText = '开启悬浮窗';
     }
   });
+
+  // 5. 动态获取版本号并展示
+  try {
+    const version = await window.electronAPI.getAppVersion();
+    if (appVersionText) {
+      appVersionText.innerText = `v${version} · 智能中转器`;
+    }
+  } catch (err) {
+    console.error('Failed to get app version: ', err);
+  }
+
+  // 6. 绑定手动检查更新事件
+  if (btnCheckUpdate) {
+    btnCheckUpdate.addEventListener('click', async () => {
+      try {
+        btnCheckUpdate.disabled = true;
+        btnCheckUpdate.innerText = '检查中...';
+        await window.electronAPI.checkForUpdates(true);
+      } catch (err) {
+        console.error('Check updates failed: ', err);
+      } finally {
+        btnCheckUpdate.disabled = false;
+        btnCheckUpdate.innerText = '检查更新';
+      }
+    });
+  }
 }
 
 // 启动
