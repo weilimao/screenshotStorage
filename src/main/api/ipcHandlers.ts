@@ -48,10 +48,12 @@ export function registerIpcHandlers(
   ipcMain.handle(IPC_CHANNELS.GET_CONFIG, () => {
     const config = configManager.getConfig();
     try {
-      config.openAtLogin = app.getLoginItemSettings().openAtLogin;
+      config.openAtLogin = app.isPackaged
+        ? app.getLoginItemSettings().openAtLogin
+        : (config.openAtLogin || false);
     } catch (err) {
       console.error('Failed to get login item settings:', err);
-      config.openAtLogin = false;
+      config.openAtLogin = config.openAtLogin || false;
     }
     config.storagePath = storageManager.getStoragePath();
     return config;
@@ -101,9 +103,11 @@ export function registerIpcHandlers(
     // 获取最新的配置并合并开机自启状态推送
     const config = configManager.getConfig();
     try {
-      config.openAtLogin = app.getLoginItemSettings().openAtLogin;
+      config.openAtLogin = app.isPackaged
+        ? app.getLoginItemSettings().openAtLogin
+        : (config.openAtLogin || false);
     } catch (err) {
-      config.openAtLogin = newConfig.openAtLogin;
+      config.openAtLogin = newConfig.openAtLogin !== undefined ? newConfig.openAtLogin : (config.openAtLogin || false);
     }
 
     // 合并实际存储路径推送给前端
