@@ -14,6 +14,7 @@
   "build": {
     "appId": "com.screenshot.storage",
     "productName": "截图智能暂存箱",
+    "artifactName": "screenshot-storage-${version}-${os}-${arch}.${ext}",
     "publish": [
       {
         "provider": "github",
