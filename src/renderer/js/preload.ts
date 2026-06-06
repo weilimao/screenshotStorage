@@ -19,8 +19,31 @@ contextBridge.exposeInMainWorld('electronAPI', {
   copyFileToClipboard: (filePath: string) => ipcRenderer.invoke('file:copy-to-clipboard', filePath),
   checkForUpdates: (manual: boolean) => ipcRenderer.invoke('app:check-for-updates', manual),
   getAppVersion: () => ipcRenderer.invoke('app:get-version'),
+  startDownloadUpdate: (assets: any[]) => ipcRenderer.invoke('app:start-download-update', assets),
+  installUpdate: (filePath: string) => ipcRenderer.send('app:install-update', filePath),
 
   // 主进程向渲染进程通知的监听器
+  onUpdateAvailable: (callback: (data: any) => void) => {
+    const listener = (_event: any, data: any) => callback(data);
+    ipcRenderer.on('app:update-available', listener);
+    return () => {
+      ipcRenderer.removeListener('app:update-available', listener);
+    };
+  },
+  onDownloadProgress: (callback: (progress: any) => void) => {
+    const listener = (_event: any, progress: any) => callback(progress);
+    ipcRenderer.on('app:download-progress', listener);
+    return () => {
+      ipcRenderer.removeListener('app:download-progress', listener);
+    };
+  },
+  onDownloadComplete: (callback: (filePath: string) => void) => {
+    const listener = (_event: any, filePath: string) => callback(filePath);
+    ipcRenderer.on('app:download-complete', listener);
+    return () => {
+      ipcRenderer.removeListener('app:download-complete', listener);
+    };
+  },
   onNewImage: (callback: (record: any) => void) => {
     const listener = (_event: any, record: any) => callback(record);
     ipcRenderer.on(IPC_CHANNELS.ON_NEW_IMAGE, listener);

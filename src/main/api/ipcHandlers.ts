@@ -311,5 +311,15 @@ export function registerIpcHandlers(
   ipcMain.handle('app:get-version', () => {
     return updateManager.getAppVersion();
   });
+
+  // 16. 开始在应用内下载新版安装包
+  ipcMain.handle('app:start-download-update', async (_, assets: any[]) => {
+    return await updateManager.startDownload(assets);
+  });
+
+  // 17. 立即重启安装并应用更新
+  ipcMain.on('app:install-update', (_, filePath: string) => {
+    updateManager.installUpdate(filePath);
+  });
 }
 

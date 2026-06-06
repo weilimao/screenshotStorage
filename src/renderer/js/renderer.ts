@@ -14,6 +14,187 @@ const toast = document.getElementById('toast') as HTMLDivElement;
 const btnCheckUpdate = document.getElementById('btn-check-update') as HTMLButtonElement;
 const appVersionText = document.getElementById('app-version-text') as HTMLSpanElement;
 
+// 更新弹窗相关 DOM
+const updateModal = document.getElementById('update-modal') as HTMLDivElement | null;
+const updateLatestVer = document.getElementById('update-latest-ver') as HTMLSpanElement | null;
+const updateCurrentVer = document.getElementById('update-current-ver') as HTMLSpanElement | null;
+const updateNotesContent = document.getElementById('update-notes-content') as HTMLDivElement | null;
+const updateProgressContainer = document.getElementById('update-progress-container') as HTMLDivElement | null;
+const updateProgressStatus = document.getElementById('update-progress-status') as HTMLSpanElement | null;
+const updateProgressPercent = document.getElementById('update-progress-percent') as HTMLSpanElement | null;
+const updateProgressBarFill = document.getElementById('update-progress-bar-fill') as HTMLDivElement | null;
+const updateActions = document.getElementById('update-actions') as HTMLDivElement | null;
+
+// 更新状态变量
+let latestUpdateData: any = null;
+let downloadedFilePath: string | null = null;
+
+function cleanVersion(ver: string): string {
+  return ver.trim().replace(/^v/i, '');
+}
+
+async function showNoUpdateModal() {
+  if (!updateModal) return;
+
+  try {
+    const version = await window.electronAPI.getAppVersion();
+    
+    const iconEl = updateModal.querySelector('.update-icon') as HTMLDivElement | null;
+    const titleGroupEl = updateModal.querySelector('.update-title-group') as HTMLDivElement | null;
+    const bodyEl = updateModal.querySelector('.update-body') as HTMLDivElement | null;
+    const progressEl = updateModal.querySelector('.update-progress-container') as HTMLDivElement | null;
+
+    if (iconEl) {
+      iconEl.innerText = '🎉';
+    }
+    if (titleGroupEl) {
+      titleGroupEl.innerHTML = `
+        <h2>您的软件已是最新版本！</h2>
+        <p class="update-subtitle">当前版本: v${cleanVersion(version)}</p>
+      `;
+    }
+    
+    if (bodyEl) {
+      bodyEl.style.display = 'none';
+    }
+    if (progressEl) {
+      progressEl.style.display = 'none';
+    }
+
+    if (updateActions) {
+      updateActions.innerHTML = `
+        <button id="btn-update-ok" class="btn btn-primary">确定</button>
+      `;
+      const btnOk = document.getElementById('btn-update-ok') as HTMLButtonElement | null;
+      if (btnOk) {
+        btnOk.addEventListener('click', () => {
+          updateModal.classList.remove('show');
+        });
+      }
+    }
+
+    updateModal.classList.add('show');
+
+  } catch (err) {
+    console.error('Failed to show no-update modal:', err);
+    showToast('当前已是最新版本');
+  }
+}
+
+function renderUpdateActions(state: 'initial' | 'downloading' | 'complete') {
+  if (!updateActions) return;
+
+  if (state === 'initial') {
+    updateActions.innerHTML = `
+      <button id="btn-update-now" class="btn btn-primary">立即在应用内更新</button>
+      <button id="btn-update-browser" class="btn btn-secondary">浏览器下载</button>
+      <button id="btn-update-cancel" class="btn btn-secondary-text">暂不更新</button>
+    `;
+
+    const btnNow = document.getElementById('btn-update-now') as HTMLButtonElement | null;
+    const btnBrowser = document.getElementById('btn-update-browser') as HTMLButtonElement | null;
+    const btnCancel = document.getElementById('btn-update-cancel') as HTMLButtonElement | null;
+
+    if (btnNow) {
+      btnNow.addEventListener('click', async () => {
+        if (latestUpdateData && latestUpdateData.assets) {
+          renderUpdateActions('downloading');
+          if (updateProgressContainer) {
+            updateProgressContainer.style.display = 'flex';
+          }
+          if (updateProgressStatus) {
+            updateProgressStatus.innerText = '正在准备下载...';
+          }
+          if (updateProgressPercent) {
+            updateProgressPercent.innerText = '0%';
+          }
+          if (updateProgressBarFill) {
+            updateProgressBarFill.style.width = '0%';
+          }
+
+          try {
+            const success = await window.electronAPI.startDownloadUpdate(latestUpdateData.assets);
+            if (!success) {
+              if (updateProgressStatus) {
+                updateProgressStatus.innerText = '下载失败，请重试或使用浏览器下载';
+              }
+              renderUpdateActions('initial');
+            }
+          } catch (err) {
+            console.error('Failed to start download:', err);
+            if (updateProgressStatus) {
+              updateProgressStatus.innerText = '下载启动失败，发生错误';
+            }
+            renderUpdateActions('initial');
+          }
+        } else {
+          showToast('无法获取更新包信息');
+        }
+      });
+    }
+
+    if (btnBrowser) {
+      btnBrowser.addEventListener('click', () => {
+        if (latestUpdateData && latestUpdateData.downloadUrl) {
+          window.open(latestUpdateData.downloadUrl);
+        } else {
+          showToast('无法打开下载链接');
+        }
+      });
+    }
+
+    if (btnCancel) {
+      btnCancel.addEventListener('click', () => {
+        if (updateModal) {
+          updateModal.classList.remove('show');
+        }
+      });
+    }
+
+  } else if (state === 'downloading') {
+    updateActions.innerHTML = `
+      <button id="btn-update-cancel" class="btn btn-secondary-text">暂不更新 (后台下载)</button>
+    `;
+
+    const btnCancel = document.getElementById('btn-update-cancel') as HTMLButtonElement | null;
+    if (btnCancel) {
+      btnCancel.addEventListener('click', () => {
+        if (updateModal) {
+          updateModal.classList.remove('show');
+        }
+      });
+    }
+
+  } else if (state === 'complete') {
+    updateActions.innerHTML = `
+      <button id="btn-update-restart" class="btn btn-primary">立即重启</button>
+      <button id="btn-update-later" class="btn btn-secondary-text">稍后重启</button>
+    `;
+
+    const btnRestart = document.getElementById('btn-update-restart') as HTMLButtonElement | null;
+    const btnLater = document.getElementById('btn-update-later') as HTMLButtonElement | null;
+
+    if (btnRestart) {
+      btnRestart.addEventListener('click', () => {
+        if (downloadedFilePath) {
+          window.electronAPI.installUpdate(downloadedFilePath);
+        } else {
+          showToast('安装文件丢失，请重新下载');
+          renderUpdateActions('initial');
+        }
+      });
+    }
+
+    if (btnLater) {
+      btnLater.addEventListener('click', () => {
+        if (updateModal) {
+          updateModal.classList.remove('show');
+        }
+      });
+    }
+  }
+}
+
 // 分类 Tabs 相关 DOM
 const categoryTabs = document.getElementById('category-tabs') as HTMLDivElement;
 const countAllEl = document.getElementById('count-all') as HTMLSpanElement;
@@ -487,6 +668,68 @@ async function init() {
     await loadImages();
   });
 
+  // 注册更新相关 IPC 推送事件监听
+  window.electronAPI.onUpdateAvailable((data) => {
+    latestUpdateData = data;
+    downloadedFilePath = null; // 重置已下载的文件路径
+
+    // 恢复图标与主体元素的展示状态（可能被“已是最新版本”所更改）
+    if (updateModal) {
+      const iconEl = updateModal.querySelector('.update-icon') as HTMLDivElement | null;
+      const titleGroupEl = updateModal.querySelector('.update-title-group') as HTMLDivElement | null;
+      const bodyEl = updateModal.querySelector('.update-body') as HTMLDivElement | null;
+
+      if (iconEl) iconEl.innerText = '🚀';
+      if (titleGroupEl) {
+        titleGroupEl.innerHTML = `
+          <h2>发现新版本 <span id="update-latest-ver">v${cleanVersion(data.latestVersion)}</span> 可用！</h2>
+          <p class="update-subtitle">当前版本: <span id="update-current-ver">v${cleanVersion(data.currentVersion)}</span></p>
+        `;
+      }
+      if (bodyEl) {
+        bodyEl.style.display = 'flex';
+      }
+    }
+
+    // 重新获取 DOM 节点引用
+    const newLatestVer = document.getElementById('update-latest-ver') as HTMLSpanElement | null;
+    const newCurrentVer = document.getElementById('update-current-ver') as HTMLSpanElement | null;
+
+    if (newLatestVer) newLatestVer.innerText = `v${cleanVersion(data.latestVersion)}`;
+    if (newCurrentVer) newCurrentVer.innerText = `v${cleanVersion(data.currentVersion)}`;
+    if (updateNotesContent) updateNotesContent.innerText = data.releaseNotes || '无更新日志';
+
+    // 默认隐藏进度条容器，显示按钮组
+    if (updateProgressContainer) updateProgressContainer.style.display = 'none';
+    if (updateProgressBarFill) updateProgressBarFill.style.width = '0%';
+    if (updateProgressPercent) updateProgressPercent.innerText = '0%';
+
+    // 激活/显示更新模态框
+    if (updateModal) {
+      updateModal.classList.add('show');
+    }
+
+    // 渲染初始按钮状态
+    renderUpdateActions('initial');
+  });
+
+  window.electronAPI.onDownloadProgress((progress) => {
+    if (updateProgressContainer) updateProgressContainer.style.display = 'flex';
+    if (updateProgressStatus) updateProgressStatus.innerText = '正在下载更新包...';
+    if (updateProgressPercent) updateProgressPercent.innerText = `${progress.percent}%`;
+    if (updateProgressBarFill) updateProgressBarFill.style.width = `${progress.percent}%`;
+  });
+
+  window.electronAPI.onDownloadComplete((filePath) => {
+    downloadedFilePath = filePath;
+    if (updateProgressStatus) updateProgressStatus.innerText = '下载完成，重启后生效';
+    if (updateProgressPercent) updateProgressPercent.innerText = '100%';
+    if (updateProgressBarFill) updateProgressBarFill.style.width = '100%';
+
+    // 切换按钮组为重启状态
+    renderUpdateActions('complete');
+  });
+
   // 4. 绑定多分类 Tab 点击事件
   if (categoryTabs) {
     const tabButtons = categoryTabs.querySelectorAll('.tab-btn');
@@ -547,9 +790,13 @@ async function init() {
       try {
         btnCheckUpdate.disabled = true;
         btnCheckUpdate.innerText = '检查中...';
-        await window.electronAPI.checkForUpdates(true);
+        const hasUpdate = await window.electronAPI.checkForUpdates(true);
+        if (!hasUpdate) {
+          await showNoUpdateModal();
+        }
       } catch (err) {
         console.error('Check updates failed: ', err);
+        showToast('检查更新失败，请检查网络连接');
       } finally {
         btnCheckUpdate.disabled = false;
         btnCheckUpdate.innerText = '检查更新';

@@ -143,6 +143,43 @@
     <img id="preview-image" src="" alt="Preview">
   </div>
   
+  <!-- 发现新版本更新提示模态框 -->
+  <div id="update-modal" class="update-modal">
+    <div class="update-card">
+      <div class="update-header">
+        <div class="update-icon">🚀</div>
+        <div class="update-title-group">
+          <h2>发现新版本 <span id="update-latest-ver">v1.0.2</span> 可用！</h2>
+          <p class="update-subtitle">当前版本: <span id="update-current-ver">v1.0.1</span></p>
+        </div>
+      </div>
+      
+      <div class="update-body">
+        <div class="update-notes-title">📋 更新内容:</div>
+        <div class="update-notes" id="update-notes-content">
+          <!-- 动态加载更新日志 -->
+        </div>
+      </div>
+
+      <!-- 下载进度区 (默认隐藏) -->
+      <div class="update-progress-container" id="update-progress-container">
+        <div class="update-progress-info">
+          <span id="update-progress-status">正在准备下载...</span>
+          <span id="update-progress-percent">0%</span>
+        </div>
+        <div class="update-progress-bar-bg">
+          <div class="update-progress-bar-fill" id="update-progress-bar-fill"></div>
+        </div>
+      </div>
+      
+      <div class="update-actions" id="update-actions">
+        <button id="btn-update-now" class="btn btn-primary">立即在应用内更新</button>
+        <button id="btn-update-browser" class="btn btn-secondary">浏览器下载</button>
+        <button id="btn-update-cancel" class="btn btn-secondary-text">暂不更新</button>
+      </div>
+    </div>
+  </div>
+  
   <script>var exports = {};</script>
   <script src="../../dist/renderer/js/renderer.js"></script>
 </body>

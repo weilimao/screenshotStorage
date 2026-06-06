@@ -16,6 +16,8 @@ export interface IClipboardMonitor {
 export interface IUpdateManager {
   checkForUpdates(manual: boolean): Promise<boolean>;
   getAppVersion(): string;
+  startDownload(assets: any[]): Promise<boolean>;
+  installUpdate(filePath: string): void;
 }
 
 export interface IStorageManager {
@@ -67,9 +69,14 @@ export interface IElectronAPI {
   copyFileToClipboard(filePath: string): Promise<boolean>;
   checkForUpdates(manual: boolean): Promise<boolean>;
   getAppVersion(): Promise<string>;
+  startDownloadUpdate(assets: any[]): Promise<boolean>;
+  installUpdate(filePath: string): void;
   onNewImage(callback: (record: ImageRecord) => void): () => void;
   onImageDeleted(callback: (id: string) => void): () => void;
   onConfigChanged(callback: (config: AppConfig) => void): () => void;
   onFloatWindowStateChanged(callback: (state: boolean) => void): () => void;
   onTriggerPreview(callback: (filePath: string) => void): () => void;
+  onUpdateAvailable(callback: (data: { currentVersion: string; latestVersion: string; releaseNotes: string; downloadUrl: string; assets: any[] }) => void): () => void;
+  onDownloadProgress(callback: (progress: { percent: number; downloaded: number; total: number }) => void): () => void;
+  onDownloadComplete(callback: (filePath: string) => void): () => void;
 }
