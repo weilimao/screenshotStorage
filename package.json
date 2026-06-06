@@ -9,7 +9,7 @@
     "start": "tsc && electron .",
     "dev": "tsc && electron .",
     "dist": "npm run build && electron-builder",
-    "publish": "npm run build && electron-builder --publish always"
+    "publish": "node scripts/publish.js"
   },
   "build": {
     "appId": "com.screenshot.storage",
