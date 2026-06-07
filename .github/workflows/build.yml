@@ -33,3 +33,8 @@ jobs:
         run: npm run publish
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }} # 使用 GitHub 自动提供的内置 Token 授权，无需手动配置
+
+      - name: Update Release Notes
+        run: gh release edit ${{ github.ref_name }} --notes-file release-notes.md
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
