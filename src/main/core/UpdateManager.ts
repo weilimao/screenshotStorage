@@ -256,8 +256,8 @@ export class UpdateManager implements IUpdateManager {
       const platform = process.platform;
 
       if (platform === 'win32') {
-        // Windows: 后台静默执行 NSIS 安装包，传入 /S 参数
-        const child = spawn(filePath, ['/S'], {
+        // Windows: 后台静默执行 NSIS 安装包，传入 /S 参数，并带上 --force-run 在完成后重启应用
+        const child = spawn(filePath, ['/S', '--force-run'], {
           detached: true,
           stdio: 'ignore'
         });
