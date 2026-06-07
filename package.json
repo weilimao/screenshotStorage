@@ -1,6 +1,6 @@
 {
   "name": "screenshot-storage",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "截图智能暂存箱 - 解决 CLI 终端无法粘贴图片的问题",
   "main": "dist/main/index.js",
   "scripts": {
@@ -13,6 +13,9 @@
   },
   "build": {
     "appId": "com.screenshot.storage",
+    "releaseInfo": {
+      "releaseNotes": "1. 修复了打包后开机自启开关无法正常开启的 bug\n2. 优化了检测更新和无更新提示模态框的 UI 视觉效果"
+    },
     "productName": "截图智能暂存箱",
     "artifactName": "screenshot-storage-${version}-${os}-${arch}.${ext}",
     "publish": [

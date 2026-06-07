@@ -48,8 +48,12 @@ export function registerIpcHandlers(
   ipcMain.handle(IPC_CHANNELS.GET_CONFIG, () => {
     const config = configManager.getConfig();
     try {
+      const silentStart = config.silentStart || false;
       config.openAtLogin = app.isPackaged
-        ? app.getLoginItemSettings().openAtLogin
+        ? app.getLoginItemSettings({
+            path: process.execPath,
+            args: silentStart ? ['--hidden'] : []
+          }).openAtLogin
         : (config.openAtLogin || false);
     } catch (err) {
       console.error('Failed to get login item settings:', err);
@@ -103,8 +107,12 @@ export function registerIpcHandlers(
     // 获取最新的配置并合并开机自启状态推送
     const config = configManager.getConfig();
     try {
+      const silentStart = config.silentStart || false;
       config.openAtLogin = app.isPackaged
-        ? app.getLoginItemSettings().openAtLogin
+        ? app.getLoginItemSettings({
+            path: process.execPath,
+            args: silentStart ? ['--hidden'] : []
+          }).openAtLogin
         : (config.openAtLogin || false);
     } catch (err) {
       config.openAtLogin = newConfig.openAtLogin !== undefined ? newConfig.openAtLogin : (config.openAtLogin || false);
