@@ -1,6 +1,6 @@
 {
   "name": "screenshot-storage",
-  "version": "1.0.6",
+  "version": "1.0.7",
   "description": "截图智能暂存箱 - 解决 CLI 终端无法粘贴图片的问题",
   "main": "dist/main/index.js",
   "scripts": {

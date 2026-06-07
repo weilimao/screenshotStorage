@@ -1,6 +1,7 @@
 import { app, BrowserWindow, clipboard } from 'electron';
 import * as path from 'path';
-import { exec } from 'child_process';
+import * as fs from 'fs';
+import { exec, execSync } from 'child_process';
 import { ConfigManager } from './config';
 import { StorageManager } from './core/StorageManager';
 import { WindowManager } from './core/WindowManager';
@@ -16,6 +17,68 @@ let clipboardMonitor: ClipboardMonitor;
 let updateManager: UpdateManager;
 
 const isDev = !app.isPackaged;
+
+// 探测系统默认的截图与录屏目录
+function detectDefaultWatchFolders(): string[] {
+  const folders: string[] = [];
+  const platform = process.platform;
+
+  if (platform === 'win32') {
+    try {
+      const picturesDir = app.getPath('pictures');
+      const winScreenshots = path.join(picturesDir, 'Screenshots');
+      if (!fs.existsSync(winScreenshots)) {
+        fs.mkdirSync(winScreenshots, { recursive: true });
+      }
+      folders.push(path.resolve(winScreenshots));
+    } catch (err) {
+      console.error('Failed to get or create pictures screenshots path:', err);
+    }
+
+    try {
+      const videosDir = app.getPath('videos');
+      const winCaptures = path.join(videosDir, 'Captures');
+      if (!fs.existsSync(winCaptures)) {
+        fs.mkdirSync(winCaptures, { recursive: true });
+      }
+      folders.push(path.resolve(winCaptures));
+    } catch (err) {
+      console.error('Failed to get or create videos captures path:', err);
+    }
+  } else if (platform === 'darwin') {
+    let macCapturePath = '';
+    try {
+      macCapturePath = execSync('defaults read com.apple.screencapture location', { encoding: 'utf8' }).trim();
+    } catch (err) {
+      // 如果命令失败，说明使用系统默认位置（桌面）
+    }
+
+    if (macCapturePath) {
+      // 处理可能的 ~ 符号
+      if (macCapturePath.startsWith('~')) {
+        const homeDir = app.getPath('home');
+        macCapturePath = path.join(homeDir, macCapturePath.slice(1));
+      }
+      try {
+        if (!fs.existsSync(macCapturePath)) {
+          fs.mkdirSync(macCapturePath, { recursive: true });
+        }
+        folders.push(path.resolve(macCapturePath));
+      } catch (err) {
+        console.error('Failed to resolve custom mac screencapture path:', err);
+      }
+    } else {
+      try {
+        const desktopDir = app.getPath('desktop');
+        folders.push(path.resolve(desktopDir));
+      } catch (err) {
+        console.error('Failed to get desktop path:', err);
+      }
+    }
+  }
+
+  return folders;
+}
 
 // 封装 Windows 平台图片与文件混合写入（支持 text/plain 纯文本路径以在终端粘贴）
 function writeImageAndFileDropToClipboardWin32(filePath: string): Promise<boolean> {
@@ -53,6 +116,16 @@ function initApp() {
   const userDataPath = app.getPath('userData');
   const configPath = path.join(userDataPath, 'config.json');
   configManager = new ConfigManager(configPath);
+
+  // 自动侦测并初始化默认的系统截图与录屏监听目录
+  const currentConfig = configManager.getConfig();
+  if (!currentConfig.watchFolders || currentConfig.watchFolders.length === 0) {
+    const defaultWatchFolders = detectDefaultWatchFolders();
+    if (defaultWatchFolders.length > 0) {
+      configManager.updateConfig({ watchFolders: defaultWatchFolders });
+      console.log(`Auto-detected and configured default watch folders: ${defaultWatchFolders.join(', ')}`);
+    }
+  }
   
   const defaultStorageDir = isDev
     ? path.join(app.getAppPath(), 'storage')

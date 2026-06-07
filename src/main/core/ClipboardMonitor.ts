@@ -289,15 +289,37 @@ export class ClipboardMonitor implements IClipboardMonitor {
       persistent: true,
       ignoreInitial: true, // 忽略初始存在的历史文件
       awaitWriteFinish: {
-        stabilityThreshold: 500, // 微信写入文件需要一段时间，等待500ms无写入才触发
+        stabilityThreshold: 1000, // 微信与录屏写盘均需要稳定期，等待1000ms无写入才触发
         pollInterval: 100
       }
     });
 
     this.watcher.on('add', (filePath) => {
       const ext = path.extname(filePath).toLowerCase();
-      // 只处理常见图片格式
-      if (['.png', '.jpg', '.jpeg', '.gif', '.bmp', '.webp'].includes(ext)) {
+      const imageExts = ['.png', '.jpg', '.jpeg', '.gif', '.bmp', '.webp'];
+      const videoExts = ['.mp4', '.mov', '.avi', '.mkv', '.flv', '.wmv'];
+
+      // 忽略常见临时后缀（防止录屏临时写入占位文件被提前捕获）
+      if (
+        filePath.endsWith('.tmp') ||
+        filePath.endsWith('.temp') ||
+        filePath.endsWith('.part') ||
+        filePath.endsWith('.crdownload') ||
+        filePath.endsWith('.download')
+      ) {
+        return;
+      }
+
+      if ([...imageExts, ...videoExts].includes(ext)) {
+        try {
+          if (!fs.existsSync(filePath) || fs.statSync(filePath).size === 0) {
+            return; // 忽略大小为0或已经被删掉的空文件
+          }
+        } catch (err) {
+          console.error('Failed to stat captured file:', err);
+          return;
+        }
+
         if (this.fileCapturedCallback) {
           this.fileCapturedCallback(filePath);
         }
