@@ -139,6 +139,8 @@ export class WindowManager implements IWindowManager {
       }
     });
 
+    this.mainWindow.setMenu(null);
+
     this.mainWindow.loadFile(this.mainHtmlPath);
 
     this.mainWindow.once('ready-to-show', () => {
