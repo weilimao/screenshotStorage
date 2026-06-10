@@ -4,6 +4,7 @@ const floatImageList = document.getElementById('float-image-list') as HTMLDivEle
 const floatEmptyState = document.getElementById('float-empty-state') as HTMLDivElement;
 const btnCloseFloat = document.getElementById('btn-close-float') as HTMLButtonElement;
 const btnExpandFloat = document.getElementById('btn-expand-float') as HTMLButtonElement;
+const btnScreenshotFloat = document.getElementById('btn-screenshot-float') as HTMLButtonElement;
 const toast = document.getElementById('toast') as HTMLDivElement;
 
 let isExpanded = false; // 默认收起
@@ -37,10 +38,15 @@ function renderCard(record: ImageRecord): HTMLDivElement {
     mediaHtml = `<img src="${record.filepath}" alt="Screenshot">`;
   }
   
+  const badgeClass = isVideo ? 'badge-video' : 'badge-image';
+  const badgeText = isVideo ? '视频' : '图片';
+  const badgeHtml = `<div class="float-diagonal-badge ${badgeClass}">${badgeText}</div>`;
+  
   const fileUrl = `https://${record.filepath.replace(/\\/g, '/')}`;
   card.innerHTML = `
     <a href="${fileUrl}" class="float-img-wrapper" draggable="true" style="cursor: zoom-in; display: block; text-decoration: none;">
       ${mediaHtml}
+      ${badgeHtml}
       <div class="float-overlay">
         <span class="float-drag-txt">拖动路径</span>
       </div>
@@ -155,6 +161,12 @@ async function init() {
   btnCloseFloat.addEventListener('click', () => {
     window.electronAPI.toggleFloatWindow();
   });
+
+  if (btnScreenshotFloat) {
+    btnScreenshotFloat.addEventListener('click', () => {
+      window.electronAPI.triggerScreenshot();
+    });
+  }
 
   // 绑定收起展开事件
   btnExpandFloat.addEventListener('click', async () => {

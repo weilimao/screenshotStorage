@@ -21,6 +21,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getAppVersion: () => ipcRenderer.invoke('app:get-version'),
   startDownloadUpdate: (assets: any[]) => ipcRenderer.invoke('app:start-download-update', assets),
   installUpdate: (filePath: string) => ipcRenderer.send('app:install-update', filePath),
+  triggerScreenshot: () => ipcRenderer.invoke('app:trigger-screenshot'),
 
   // 主进程向渲染进程通知的监听器
   onUpdateAvailable: (callback: (data: any) => void) => {

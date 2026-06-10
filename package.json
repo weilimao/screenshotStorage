@@ -1,6 +1,6 @@
 {
   "name": "screenshot-storage",
-  "version": "1.0.8",
+  "version": "1.1.0",
   "description": "截图智能暂存箱 - 解决 CLI 终端无法粘贴图片的问题",
   "main": "dist/main/index.js",
   "scripts": {
@@ -14,7 +14,7 @@
   "build": {
     "appId": "com.screenshot.storage",
     "releaseInfo": {
-      "releaseNotes": "1. 修复了打包后开机自启开关无法正常开启的 bug\n2. 修复了应用内静默安装完成后未能自动重新拉起软件的 bug\n3. 优化了检测更新和无更新提示模态框的 UI 视觉效果"
+      "releaseNotes": "1. 修复了多显示器环境下点击悬浮窗截图时，由于 Windows 前台锁限制导致前两个屏幕遮罩失效闪退的 bug。\n2. 优化了悬浮窗截图触发时的焦点释放逻辑，反应速度大幅提升，与快捷键截图一样快如闪电。\n3. 优化了截图遮罩层级，采用 screen-saver 级别置顶，确保在各种置顶窗口层叠时依然能 100% 成功选取截图。"
     },
     "productName": "截图智能暂存箱",
     "artifactName": "screenshot-storage-${version}-${os}-${arch}.${ext}",
@@ -60,7 +60,8 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "chokidar": "^3.6.0"
+    "chokidar": "^3.6.0",
+    "electron-screenshots": "^0.6.1"
   },
   "devDependencies": {
     "@types/node": "^20.11.0",

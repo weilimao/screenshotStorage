@@ -22,8 +22,8 @@ export interface IUpdateManager {
 
 export interface IStorageManager {
   init(): Promise<void>;
-  saveImage(imageBuffer: Buffer): Promise<ImageRecord>;
-  saveImageFromFile(sourceFilePath: string): Promise<ImageRecord>;
+  saveImage(imageBuffer: Buffer): Promise<ImageRecord | null>;
+  saveImageFromFile(sourceFilePath: string): Promise<ImageRecord | null>;
   getImages(): Promise<ImageRecord[]>;
   deleteImage(id: string): Promise<void>;
   clearAll(type?: 'all' | 'image' | 'video'): Promise<void>;
@@ -51,6 +51,7 @@ export interface AppConfig {
   silentStart?: boolean;
   customStoragePath?: string;
   storagePath?: string;
+  screenshotShortcut?: string;
 }
 
 export interface IElectronAPI {
@@ -79,4 +80,5 @@ export interface IElectronAPI {
   onUpdateAvailable(callback: (data: { currentVersion: string; latestVersion: string; releaseNotes: string; downloadUrl: string; assets: any[] }) => void): () => void;
   onDownloadProgress(callback: (progress: { percent: number; downloaded: number; total: number }) => void): () => void;
   onDownloadComplete(callback: (filePath: string) => void): () => void;
+  triggerScreenshot(): Promise<boolean>;
 }

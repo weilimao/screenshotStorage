@@ -84,7 +84,7 @@ body {
   opacity: 0.5;
 }
 
-.btn-close, .btn-expand {
+.btn-close, .btn-expand, .btn-screenshot {
   background: transparent;
   border: none;
   color: var(--text-muted);
@@ -100,9 +100,18 @@ body {
   transition: all 0.2s;
 }
 
+.btn-screenshot {
+  font-size: 11px;
+}
+
 .btn-close:hover {
   background: rgba(255, 82, 82, 0.2);
   color: var(--danger-color);
+}
+
+.btn-screenshot:hover {
+  background: rgba(0, 229, 255, 0.15);
+  color: #00e5ff;
 }
 
 .btn-expand {
@@ -303,4 +312,32 @@ body {
 .toast.show {
   transform: translate(-50%, 0);
   opacity: 1;
+}
+
+/* 浮窗卡片右上角斜角标签 */
+.float-diagonal-badge {
+  position: absolute;
+  top: 5px;
+  right: -17px;
+  width: 52px;
+  text-align: center;
+  color: #ffffff;
+  font-size: 8px;
+  font-weight: 700;
+  transform: rotate(45deg);
+  z-index: 5;
+  line-height: 13px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+  letter-spacing: 0.5px;
+  pointer-events: none; /* 确保不影响拖动行为 */
+}
+
+/* 视频斜角标签：紫色到红色的科技感渐变 */
+.float-diagonal-badge.badge-video {
+  background: linear-gradient(135deg, #7c4dff, #ff5252);
+}
+
+/* 图片斜角标签：青色到蓝紫色的清新渐变 */
+.float-diagonal-badge.badge-image {
+  background: linear-gradient(135deg, #00e5ff, #7c4dff);
 }

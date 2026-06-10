@@ -6,6 +6,7 @@ import { StorageManager } from '../core/StorageManager';
 import { WindowManager } from '../core/WindowManager';
 import { ClipboardMonitor } from '../core/ClipboardMonitor';
 import { UpdateManager } from '../core/UpdateManager';
+import { ShortcutManager } from '../core/ShortcutManager';
 
 function isImageFile(filePath: string): boolean {
   const ext = filePath.split('.').pop()?.toLowerCase();
@@ -17,7 +18,8 @@ export function registerIpcHandlers(
   storageManager: StorageManager,
   windowManager: WindowManager,
   clipboardMonitor: ClipboardMonitor,
-  updateManager: UpdateManager
+  updateManager: UpdateManager,
+  shortcutManager: ShortcutManager
 ): void {
   // 1. 获取所有图片
   ipcMain.handle(IPC_CHANNELS.GET_IMAGES, async () => {
@@ -75,7 +77,17 @@ export function registerIpcHandlers(
       }
     }
 
+    const oldConfig = configManager.getConfig();
     configManager.updateConfig(newConfig);
+
+    if (newConfig.screenshotShortcut !== undefined) {
+      const success = shortcutManager.registerShortcut();
+      if (!success) {
+        // 注册失败，恢复原快捷键配置并返回失败
+        configManager.updateConfig({ screenshotShortcut: oldConfig.screenshotShortcut });
+        return false;
+      }
+    }
 
     // 处理开机自启
     if (newConfig.openAtLogin !== undefined || newConfig.silentStart !== undefined) {
@@ -251,6 +263,7 @@ export function registerIpcHandlers(
       if (!isImageFile(filePath)) {
         // 如果是非图片文件（如视频、音频等），只写入纯文本绝对路径到剪贴板，防止编辑器拦截而无法粘贴路径
         clipboard.writeText(filePath);
+        clipboardMonitor.ignoreCurrentClipboardContent();
         return true;
       }
 
@@ -286,6 +299,7 @@ export function registerIpcHandlers(
               }
               resolve(false);
             } else {
+              clipboardMonitor.ignoreCurrentClipboardContent();
               resolve(true);
             }
           });
@@ -302,6 +316,7 @@ export function registerIpcHandlers(
             'file-paths': [filePath]
           } as any)
         });
+        clipboardMonitor.ignoreCurrentClipboardContent();
         return true;
       }
     } catch (err) {
@@ -328,6 +343,21 @@ export function registerIpcHandlers(
   // 17. 立即重启安装并应用更新
   ipcMain.on('app:install-update', (_, filePath: string) => {
     updateManager.installUpdate(filePath);
+  });
+
+  // 18. 手动触发截图
+  ipcMain.handle('app:trigger-screenshot', () => {
+    const floatWin = windowManager.getFloatWindow();
+    if (floatWin && !floatWin.isDestroyed()) {
+      try {
+        floatWin.setAlwaysOnTop(false);
+        floatWin.blur();
+      } catch (err) {
+        console.error('[ipcHandlers] Failed to blur and reset alwaysOnTop on floatWin:', err);
+      }
+    }
+    shortcutManager.triggerScreenshot();
+    return true;
   });
 }
 

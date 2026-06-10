@@ -9,12 +9,14 @@ import { ClipboardMonitor } from './core/ClipboardMonitor';
 import { UpdateManager } from './core/UpdateManager';
 import { registerIpcHandlers } from './api/ipcHandlers';
 import { IPC_CHANNELS } from '../shared/constants';
+import { ShortcutManager } from './core/ShortcutManager';
 
 let configManager: ConfigManager;
 let storageManager: StorageManager;
 let windowManager: WindowManager;
 let clipboardMonitor: ClipboardMonitor;
 let updateManager: UpdateManager;
+let shortcutManager: ShortcutManager;
 
 const isDev = !app.isPackaged;
 
@@ -142,6 +144,7 @@ function initApp() {
   clipboardMonitor = new ClipboardMonitor(configManager);
   clipboardMonitor.setStorageDir(storageDir);
   updateManager = new UpdateManager(windowManager);
+  shortcutManager = new ShortcutManager(configManager);
 
   // 3. 异步初始化存储管理器
   storageManager.init().then(() => {
@@ -151,12 +154,13 @@ function initApp() {
   });
 
   // 4. 注册 IPC 消息处理
-  registerIpcHandlers(configManager, storageManager, windowManager, clipboardMonitor, updateManager);
+  registerIpcHandlers(configManager, storageManager, windowManager, clipboardMonitor, updateManager, shortcutManager);
 
   // 5. 绑定剪贴板/文件监听事件与窗口推送 (Event-Driven)
   clipboardMonitor.onImageCaptured(async (buffer) => {
     try {
       const record = await storageManager.saveImage(buffer);
+      if (!record) return; // 过滤重复录入
       console.log(`New image captured from clipboard: ${record.filename}`);
       
       // 先将去重缓存路径设为当前文件，确保后面写入剪贴板时不会被 checkClipboard 触发二次事件
@@ -175,6 +179,9 @@ function initApp() {
           } as any)
         });
       }
+      
+      // 更新剪贴板去重缓存，防止自写入二次触发
+      clipboardMonitor.ignoreCurrentClipboardContent();
 
       // 推送给渲染进程
       windowManager.sendToMainWindow(IPC_CHANNELS.ON_NEW_IMAGE, record);
@@ -193,6 +200,7 @@ function initApp() {
       }
 
       const record = await storageManager.saveImageFromFile(filePath);
+      if (!record) return; // 过滤重复录入
       console.log(`New image captured from folder: ${record.filename} (source: ${filePath})`);
       
       // 先将去重缓存路径设为当前文件
@@ -213,9 +221,12 @@ function initApp() {
           });
         }
       } else {
-        // 非图片的多媒体文件（视频、音频等）只写入纯文本路径，保证在终端和 IDE 中均可正常粘贴物理路径
+        // 非图片的多媒体文件（视频、音频等）只写入纯文本路径，保证在终端 and IDE 中均可正常粘贴物理路径
         clipboard.writeText(record.filepath);
       }
+
+      // 更新剪贴板去重缓存，防止自写入二次触发
+      clipboardMonitor.ignoreCurrentClipboardContent();
 
       windowManager.sendToMainWindow(IPC_CHANNELS.ON_NEW_IMAGE, record);
       windowManager.sendToFloatWindow(IPC_CHANNELS.ON_NEW_IMAGE, record);
@@ -242,8 +253,56 @@ function initApp() {
     }
   }
 
+  // 注册微信式截图完成后的回调存储逻辑
+  shortcutManager.onScreenshotCaptured(async (buffer) => {
+    try {
+      const record = await storageManager.saveImage(buffer);
+      if (!record) return; // 自动去重过滤
+
+      console.log(`New screenshot saved: ${record.filename}`);
+      clipboardMonitor.setLastFilePaths(record.filepath);
+
+      if (process.platform === 'win32') {
+        await writeImageAndFileDropToClipboardWin32(record.filepath);
+      } else {
+        const { nativeImage } = require('electron');
+        const img = nativeImage.createFromBuffer(buffer);
+        clipboard.write({
+          text: record.filepath,
+          image: img,
+          ...({
+            'file-paths': [record.filepath]
+          } as any)
+        });
+      }
+
+      // 更新剪贴板去重缓存
+      clipboardMonitor.ignoreCurrentClipboardContent();
+
+      // 推送给所有窗口更新
+      windowManager.sendToMainWindow(IPC_CHANNELS.ON_NEW_IMAGE, record);
+      windowManager.sendToFloatWindow(IPC_CHANNELS.ON_NEW_IMAGE, record);
+    } catch (err) {
+      console.error('Failed to handle screenshots event callback:', err);
+    }
+  });
+
   clipboardMonitor.start();
   windowManager.createMainWindow(!isSilentStart);
+
+  // 截图完成后，如果之前因为点击浮窗临时取消了 alwaysOnTop，则将其恢复为置顶
+  shortcutManager.onScreenshotFinished(() => {
+    const floatWin = windowManager.getFloatWindow();
+    if (floatWin && !floatWin.isDestroyed()) {
+      try {
+        floatWin.setAlwaysOnTop(true);
+      } catch (err) {
+        console.error('[index] Failed to restore alwaysOnTop on floatWin:', err);
+      }
+    }
+  });
+
+  shortcutManager.registerShortcut();
 
   // 7. 记忆功能：若上次开启了悬浮窗且不是静默启动，在启动时自动拉起
   if (config.showFloatWindowOnStart && !isSilentStart) {
@@ -274,6 +333,9 @@ app.on('window-all-closed', () => {
   // 停止监听器
   if (clipboardMonitor) {
     clipboardMonitor.stop();
+  }
+  if (shortcutManager) {
+    shortcutManager.unregisterShortcut();
   }
   if (process.platform !== 'darwin') {
     app.quit();

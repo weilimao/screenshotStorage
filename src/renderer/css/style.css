@@ -511,6 +511,34 @@ body.light-theme .storage-path-display {
   cursor: grabbing;
 }
 
+/* 主界面卡片右上角斜角标签 */
+.diagonal-badge {
+  position: absolute;
+  top: 6px;
+  right: -18px;
+  width: 55px;
+  text-align: center;
+  color: #ffffff;
+  font-size: 9px;
+  font-weight: 700;
+  transform: rotate(45deg);
+  z-index: 5;
+  line-height: 14px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+  letter-spacing: 0.5px;
+  pointer-events: none; /* 确保不影响拖动行为 */
+}
+
+/* 视频标签：科技感红紫渐变 */
+.diagonal-badge.badge-video {
+  background: linear-gradient(135deg, #7c4dff, #ff5252);
+}
+
+/* 图片标签：清新蓝绿渐变 */
+.diagonal-badge.badge-image {
+  background: linear-gradient(135deg, #00e5ff, #7c4dff);
+}
+
 .image-card img {
   width: 100%;
   height: 100%;
@@ -730,6 +758,55 @@ body.light-theme .storage-path-display {
   background: rgba(255, 82, 82, 0.2);
   color: #ff5252;
   border-color: #ff5252;
+}
+
+/* 预览导航按钮通用样式 */
+.preview-nav-btn {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%) scale(1);
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #ffffff;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  z-index: 1001;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  user-select: none;
+}
+
+.preview-prev-btn {
+  left: 32px;
+}
+
+.preview-next-btn {
+  right: 32px;
+}
+
+/* 悬停与激活态 */
+.preview-nav-btn:hover {
+  background: rgba(124, 77, 255, 0.2);
+  color: #ffffff;
+  border-color: #7c4dff;
+  transform: translateY(-50%) scale(1.1);
+  box-shadow: 0 0 20px rgba(124, 77, 255, 0.4);
+}
+
+.preview-nav-btn:active {
+  transform: translateY(-50%) scale(0.95);
+}
+
+/* 只有一个元素时隐藏或禁用按钮 */
+.preview-nav-btn.disabled {
+  opacity: 0;
+  pointer-events: none;
 }
 
 /* ==========================================================================
@@ -1127,3 +1204,166 @@ body.light-theme .btn-secondary-text:hover {
   color: #1a1a24;
   background: rgba(0, 0, 0, 0.03);
 }
+
+/* ==========================================================================
+   系统设置模态框 (System Settings Modal)
+   ========================================================================== */
+.settings-modal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(10, 10, 15, 0.75);
+  backdrop-filter: blur(15px);
+  -webkit-backdrop-filter: blur(15px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.3s ease-out;
+  z-index: 999;
+}
+
+body.light-theme .settings-modal {
+  background: rgba(240, 240, 245, 0.7);
+}
+
+.settings-modal.show {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.settings-card {
+  background: linear-gradient(135deg, rgba(28, 28, 40, 0.9) 0%, rgba(20, 20, 30, 0.95) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 18px;
+  width: 580px;
+  max-width: 90%;
+  padding: 24px;
+  box-shadow: 0 30px 70px rgba(0, 0, 0, 0.6), inset 0 1px 1px rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(25px);
+  -webkit-backdrop-filter: blur(25px);
+  display: flex;
+  flex-direction: column;
+  color: #e2e2e9;
+  max-height: 90vh;
+}
+
+body.light-theme .settings-card {
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.9) 0%, rgba(245, 245, 250, 0.95) 100%);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  box-shadow: 0 30px 70px rgba(10, 10, 30, 0.15), inset 0 1px 1px rgba(255, 255, 255, 0.9);
+  color: #1a1a24;
+}
+
+.settings-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 16px;
+}
+
+.settings-title h2 {
+  font-size: 19px;
+  font-weight: 700;
+  color: #ffffff;
+  margin: 0;
+}
+
+body.light-theme .settings-title h2 {
+  color: #1a1a24;
+}
+
+.settings-subtitle {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 4px;
+}
+
+.settings-close-btn {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: var(--text-muted);
+  font-size: 20px;
+  cursor: pointer;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+
+.settings-close-btn:hover {
+  background: rgba(255, 82, 82, 0.2);
+  color: #ff5252;
+  border-color: #ff5252;
+}
+
+.settings-body {
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.settings-body::-webkit-scrollbar {
+  width: 4px;
+}
+
+.settings-body::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 2px;
+}
+
+body.light-theme .settings-body::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.1);
+}
+
+.settings-section h3 {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-main);
+  margin: 0 0 6px 0;
+}
+
+/* 快捷键录制状态样式 */
+.shortcut-recording-container.recording input {
+  border-color: #7c4dff !important;
+  box-shadow: 0 0 12px rgba(124, 77, 255, 0.4) !important;
+  background: rgba(124, 77, 255, 0.1) !important;
+  animation: borderGlow 1.5s infinite ease-in-out;
+}
+
+.shortcut-recording-container.recording .recording-status {
+  color: #00e5ff !important;
+  font-weight: bold;
+}
+
+@keyframes borderGlow {
+  0%, 100% {
+    box-shadow: 0 0 8px rgba(124, 77, 255, 0.3);
+    border-color: rgba(124, 77, 255, 0.5);
+  }
+  50% {
+    box-shadow: 0 0 16px rgba(124, 77, 255, 0.6);
+    border-color: #7c4dff;
+  }
+}
+
+.animate-slide-in {
+  animation: settingsSlideIn 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes settingsSlideIn {
+  from {
+    transform: translateY(30px) scale(0.96);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0) scale(1);
+    opacity: 1;
+  }
+}
+

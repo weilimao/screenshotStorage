@@ -3,9 +3,16 @@ import * as path from 'path';
 import { IStorageManager, ImageRecord } from '../../shared/types';
 import { ConfigManager } from '../config';
 
+interface ImageFingerprint {
+  width: number;
+  height: number;
+  time: number;
+}
+
 export class StorageManager implements IStorageManager {
   private metadataPath: string;
   private records: ImageRecord[] = [];
+  private lastImageFingerprint: ImageFingerprint | null = null;
 
   constructor(
     private storageDir: string,
@@ -39,7 +46,26 @@ export class StorageManager implements IStorageManager {
     return this.storageDir;
   }
 
-  public async saveImage(imageBuffer: Buffer): Promise<ImageRecord> {
+  public async saveImage(imageBuffer: Buffer): Promise<ImageRecord | null> {
+    const { nativeImage } = require('electron');
+    const img = nativeImage.createFromBuffer(imageBuffer);
+    const size = img.getSize();
+    const now = Date.now();
+
+    if (this.lastImageFingerprint && 
+        now - this.lastImageFingerprint.time < 2000 && 
+        this.lastImageFingerprint.width === size.width && 
+        this.lastImageFingerprint.height === size.height) {
+      console.log('Duplicate image capture detected (clipboard), skipping save.');
+      return null;
+    }
+
+    this.lastImageFingerprint = {
+      width: size.width,
+      height: size.height,
+      time: now
+    };
+
     const id = Date.now().toString() + '_' + Math.random().toString(36).substring(2, 7);
     const filename = `shot_${Date.now()}.png`;
     const filepath = path.join(this.storageDir, filename);
@@ -62,9 +88,43 @@ export class StorageManager implements IStorageManager {
     return record;
   }
 
-  public async saveImageFromFile(sourceFilePath: string): Promise<ImageRecord> {
+  public async saveImageFromFile(sourceFilePath: string): Promise<ImageRecord | null> {
+    const ext = path.extname(sourceFilePath).toLowerCase();
+    const isImage = ['.png', '.jpg', '.jpeg', '.gif', '.bmp', '.webp'].includes(ext);
+
+    let width = 0;
+    let height = 0;
+
+    if (isImage) {
+      try {
+        const { nativeImage } = require('electron');
+        const img = nativeImage.createFromPath(sourceFilePath);
+        const size = img.getSize();
+        width = size.width;
+        height = size.height;
+      } catch (err) {
+        console.error('Failed to parse image dimensions from file:', err);
+      }
+    }
+
+    const now = Date.now();
+    if (isImage && width > 0 && height > 0 && this.lastImageFingerprint && 
+        now - this.lastImageFingerprint.time < 2000 && 
+        this.lastImageFingerprint.width === width && 
+        this.lastImageFingerprint.height === height) {
+      console.log('Duplicate image capture detected (folder watcher), skipping save.');
+      return null;
+    }
+
+    if (isImage && width > 0 && height > 0) {
+      this.lastImageFingerprint = {
+        width,
+        height,
+        time: now
+      };
+    }
+
     const id = Date.now().toString() + '_' + Math.random().toString(36).substring(2, 7);
-    const ext = path.extname(sourceFilePath) || '.png';
     const filename = `shot_${Date.now()}${ext}`;
     const filepath = path.join(this.storageDir, filename);
 

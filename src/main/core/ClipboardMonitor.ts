@@ -328,4 +328,17 @@ export class ClipboardMonitor implements IClipboardMonitor {
 
     console.log(`Watching folders for screenshots: ${validFolders.join(', ')}`);
   }
+
+  public ignoreCurrentClipboardContent(): void {
+    try {
+      const formats = clipboard.availableFormats();
+      const filePaths = this.getFilePathsFromClipboard(formats);
+      this.lastFilePaths = filePaths.join(';');
+      
+      const image = clipboard.readImage();
+      this.lastImageBuffer = image.isEmpty() ? null : image.toPNG();
+    } catch (err) {
+      console.error('Failed to ignore current clipboard content:', err);
+    }
+  }
 }

@@ -1,18 +1,23 @@
 import { ImageRecord, AppConfig } from '../../shared/types';
 
+declare class SettingsManager {
+  constructor();
+  registerOnConfigSaved(callback: () => void): void;
+}
+
 // DOM 元素引用
 const btnToggleFloat = document.getElementById('btn-toggle-float') as HTMLButtonElement;
 const floatBtnText = document.getElementById('float-btn-text') as HTMLSpanElement;
-const btnAddFolder = document.getElementById('btn-add-folder') as HTMLButtonElement;
-const btnChangeStorage = document.getElementById('btn-change-storage') as HTMLButtonElement;
-const storagePathText = document.getElementById('storage-path-text') as HTMLDivElement;
-const btnClearAll = document.getElementById('btn-clear-all') as HTMLButtonElement;
-const watchFolderList = document.getElementById('watch-folder-list') as HTMLDivElement;
 const imageGrid = document.getElementById('image-grid') as HTMLDivElement;
 const emptyState = document.getElementById('empty-state') as HTMLDivElement;
 const toast = document.getElementById('toast') as HTMLDivElement;
 const btnCheckUpdate = document.getElementById('btn-check-update') as HTMLButtonElement;
 const appVersionText = document.getElementById('app-version-text') as HTMLSpanElement;
+const btnOpenSettings = document.getElementById('btn-open-settings') as HTMLButtonElement;
+const selectRetention = document.getElementById('select-retention') as HTMLSelectElement;
+const btnClearImages = document.getElementById('btn-clear-images') as HTMLButtonElement;
+const btnClearVideos = document.getElementById('btn-clear-videos') as HTMLButtonElement;
+const btnClearAll = document.getElementById('btn-clear-all') as HTMLButtonElement;
 
 // 更新弹窗相关 DOM
 const updateModal = document.getElementById('update-modal') as HTMLDivElement | null;
@@ -226,15 +231,16 @@ function updateSilentStartUIState() {
   }
 }
 
-// 保留时长与分类清理 DOM
-const selectRetention = document.getElementById('select-retention') as HTMLSelectElement;
-const btnClearImages = document.getElementById('btn-clear-images') as HTMLButtonElement;
-const btnClearVideos = document.getElementById('btn-clear-videos') as HTMLButtonElement;
-
 // 大图预览相关 DOM
 const previewModal = document.getElementById('preview-modal') as HTMLDivElement;
 const previewImage = document.getElementById('preview-image') as HTMLImageElement;
 const previewCloseBtn = document.getElementById('preview-close-btn') as HTMLButtonElement;
+const previewPrevBtn = document.getElementById('preview-prev-btn') as HTMLButtonElement;
+const previewNextBtn = document.getElementById('preview-next-btn') as HTMLButtonElement;
+
+let allRecords: ImageRecord[] = [];
+let currentFilteredRecords: ImageRecord[] = [];
+let currentPreviewIndex: number = -1;
 
 let appConfig: AppConfig = { maxImages: 100, retentionDays: 14, watchFolders: [] };
 
@@ -269,20 +275,22 @@ function createImageCard(record: ImageRecord): HTMLDivElement {
 
   if (isVideo) {
     mediaHtml = `
-      <video src="${imageSrc}" muted loop autoplay style="width: 100%; height: 100%; object-fit: cover; pointer-events: none;"></video>
-      <div style="position: absolute; top: 8px; left: 8px; background: rgba(0,0,0,0.6); padding: 2px 6px; border-radius: 4px; font-size: 10px; color: #fff; font-weight: 600; display: flex; align-items: center; gap: 2px; z-index: 2;">
-        <span>🎬</span> 视频
-      </div>
+      <video src="${imageSrc}" muted loop style="width: 100%; height: 100%; object-fit: cover; pointer-events: none;"></video>
     `;
     formatBadge = 'video';
   } else {
     mediaHtml = `<img src="${imageSrc}" alt="Screenshot">`;
   }
 
+  const badgeClass = isVideo ? 'badge-video' : 'badge-image';
+  const badgeText = isVideo ? '视频' : '图片';
+  const badgeHtml = `<div class="diagonal-badge ${badgeClass}">${badgeText}</div>`;
+
   const fileUrl = `path:${record.filepath.replace(/\\/g, '/')}`;
   card.innerHTML = `
     <a href="${fileUrl}" class="image-wrapper" draggable="true" style="display: block; text-decoration: none;">
       ${mediaHtml}
+      ${badgeHtml}
       <div class="drag-overlay">
         <span class="drag-icon-ui">🖱️</span>
         <span class="drag-text">拖动到终端</span>
@@ -376,6 +384,7 @@ function isRecordVideo(record: ImageRecord): boolean {
 // 刷新图片展示网格
 async function loadImages() {
   const images = await window.electronAPI.getImages();
+  allRecords = images;
   imageGrid.innerHTML = '';
   
   // 1. 统计数量
@@ -402,6 +411,7 @@ async function loadImages() {
     if (currentTab === 'image') return !isVid;
     return true;
   });
+  currentFilteredRecords = filtered;
   
   if (filtered.length === 0) {
     emptyState.style.display = 'flex';
@@ -411,49 +421,15 @@ async function loadImages() {
       imageGrid.appendChild(createImageCard(img));
     });
   }
-}
 
-// 渲染监听文件夹列表
-function renderWatchFolders(folders: string[]) {
-  watchFolderList.innerHTML = '';
-  if (folders.length === 0) {
-    watchFolderList.innerHTML = '<div class="empty-folder-tip">暂无监听目录</div>';
-    return;
-  }
-
-  folders.forEach(folder => {
-    const item = document.createElement('div');
-    item.className = 'folder-item';
-    item.innerHTML = `
-      <span class="folder-path-text" title="${folder}">${folder}</span>
-      <button class="folder-delete-btn" data-folder="${folder}">❌</button>
-    `;
-
-    const delBtn = item.querySelector('.folder-delete-btn') as HTMLButtonElement;
-    delBtn.addEventListener('click', async () => {
-      const folderToRemove = delBtn.getAttribute('data-folder');
-      if (folderToRemove) {
-        const updatedFolders = appConfig.watchFolders.filter(f => f !== folderToRemove);
-        await window.electronAPI.updateConfig({ watchFolders: updatedFolders });
-      }
-    });
-
-    watchFolderList.appendChild(item);
-  });
-}
-
-function updateStoragePathDisplay(path: string) {
-  if (storagePathText) {
-    storagePathText.innerText = path;
-    storagePathText.title = path;
-  }
+  // 刷新预览界面的按钮可见度（如果预览已经打开）
+  updatePreviewNavButtons();
 }
 
 // 刷新配置
 async function loadConfig() {
   appConfig = await window.electronAPI.getConfig();
   applyTheme(appConfig.theme);
-  renderWatchFolders(appConfig.watchFolders);
   if (switchAutostart) {
     switchAutostart.checked = appConfig.openAtLogin || false;
   }
@@ -464,7 +440,6 @@ async function loadConfig() {
   if (selectRetention) {
     selectRetention.value = (appConfig.retentionDays !== undefined ? appConfig.retentionDays : 14).toString();
   }
-  updateStoragePathDisplay(appConfig.storagePath || '');
 }
 
 // 刷新浮窗按钮状态
@@ -493,7 +468,22 @@ function applyTheme(theme?: 'dark' | 'light') {
   }
 }
 
-function openPreview(filePath: string) {
+function updatePreviewNavButtons() {
+  if (!previewPrevBtn || !previewNextBtn) return;
+  if (currentFilteredRecords.length <= 1) {
+    previewPrevBtn.classList.add('disabled');
+    previewNextBtn.classList.add('disabled');
+  } else {
+    previewPrevBtn.classList.remove('disabled');
+    previewNextBtn.classList.remove('disabled');
+  }
+}
+
+function loadPreviewByIndex() {
+  if (currentPreviewIndex < 0 || currentPreviewIndex >= currentFilteredRecords.length) return;
+  const record = currentFilteredRecords[currentPreviewIndex];
+  const filePath = record.filepath;
+  
   const ext = filePath.split('.').pop()?.toLowerCase();
   const isVideo = ['mp4', 'mov', 'avi', 'mkv', 'flv', 'wmv'].includes(ext || '');
 
@@ -525,6 +515,25 @@ function openPreview(filePath: string) {
     imgEl.src = filePath;
   }
 
+  updatePreviewNavButtons();
+}
+
+function openPreview(filePath: string) {
+  let index = currentFilteredRecords.findIndex(r => r.filepath === filePath);
+  if (index === -1) {
+    // If not found in currentFilteredRecords, fall back to search in allRecords
+    index = allRecords.findIndex(r => r.filepath === filePath);
+    if (index !== -1) {
+      currentFilteredRecords = [...allRecords];
+    } else {
+      // Fallback
+      currentFilteredRecords = [{ id: '', filename: '', filepath: filePath, createdAt: Date.now() }];
+      index = 0;
+    }
+  }
+
+  currentPreviewIndex = index;
+  loadPreviewByIndex();
   previewModal.classList.add('show');
 }
 
@@ -567,6 +576,26 @@ async function init() {
     }
   };
 
+  const navigatePreview = (direction: 'prev' | 'next') => {
+    if (currentFilteredRecords.length <= 1) return;
+    if (direction === 'prev') {
+      currentPreviewIndex = (currentPreviewIndex - 1 + currentFilteredRecords.length) % currentFilteredRecords.length;
+    } else {
+      currentPreviewIndex = (currentPreviewIndex + 1) % currentFilteredRecords.length;
+    }
+    loadPreviewByIndex();
+  };
+
+  previewPrevBtn.addEventListener('click', (e) => {
+    e.stopPropagation(); // 避免触发点击 modal 背景关闭
+    navigatePreview('prev');
+  });
+
+  previewNextBtn.addEventListener('click', (e) => {
+    e.stopPropagation(); // 避免触发点击 modal 背景关闭
+    navigatePreview('next');
+  });
+
   // 绑定预览模态框关闭事件
   previewCloseBtn.addEventListener('click', closePreview);
   previewModal.addEventListener('click', (e) => {
@@ -575,8 +604,13 @@ async function init() {
     }
   });
   window.addEventListener('keydown', (e) => {
+    if (!previewModal.classList.contains('show')) return;
     if (e.key === 'Escape') {
       closePreview();
+    } else if (e.key === 'ArrowLeft') {
+      navigatePreview('prev');
+    } else if (e.key === 'ArrowRight') {
+      navigatePreview('next');
     }
   });
 
@@ -589,41 +623,6 @@ async function init() {
   btnToggleFloat.addEventListener('click', async () => {
     await window.electronAPI.toggleFloatWindow();
     await updateFloatButtonState();
-  });
-
-  btnChangeStorage.addEventListener('click', async () => {
-    const folder = await window.electronAPI.selectFolder('选择截图数据存放目录');
-    if (folder) {
-      if (folder === appConfig.storagePath) {
-        showToast('该目录已是当前存放位置');
-        return;
-      }
-      try {
-        showToast('正在迁移物理文件，请稍候...');
-        const success = await window.electronAPI.updateConfig({ customStoragePath: folder });
-        if (success) {
-          showToast('存放位置修改成功，数据已迁移！');
-        } else {
-          showToast('存放位置修改失败');
-        }
-      } catch (err) {
-        console.error('Failed to change storage directory:', err);
-        showToast('修改失败，发生未知错误');
-      }
-    }
-  });
-
-  btnAddFolder.addEventListener('click', async () => {
-    const folder = await window.electronAPI.selectFolder();
-    if (folder) {
-      if (appConfig.watchFolders.includes(folder)) {
-        showToast('该目录已在监听列表中');
-        return;
-      }
-      const updatedFolders = [...appConfig.watchFolders, folder];
-      await window.electronAPI.updateConfig({ watchFolders: updatedFolders });
-      showToast('添加监听成功');
-    }
   });
 
   if (selectRetention) {
@@ -657,6 +656,13 @@ async function init() {
       await window.electronAPI.clearAll('all');
       showToast('暂存箱已全部清空');
     }
+  });
+
+  // 实例化设置管理器并注册配置保存后的回调事件
+  const settingsManager = new SettingsManager();
+  settingsManager.registerOnConfigSaved(async () => {
+    await loadConfig();
+    await loadImages();
   });
 
   // 3. 注册主进程推送事件的监听
@@ -748,7 +754,6 @@ async function init() {
     const storagePathChanged = config.storagePath !== appConfig.storagePath;
     appConfig = config;
     applyTheme(config.theme);
-    renderWatchFolders(config.watchFolders);
     if (switchAutostart) {
       switchAutostart.checked = config.openAtLogin || false;
     }
@@ -756,7 +761,6 @@ async function init() {
       switchSilentstart.checked = config.silentStart || false;
     }
     updateSilentStartUIState();
-    updateStoragePathDisplay(config.storagePath || '');
     if (storagePathChanged) {
       await loadImages();
     }

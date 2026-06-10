@@ -11,13 +11,16 @@
   <div class="float-container">
     <!-- 顶部拖拽栏 -->
     <header class="drag-bar">
-      <button id="btn-close-float" class="btn-close">×</button>
+      <div style="display: flex; gap: 6px; align-items: center; -webkit-app-region: no-drag;">
+        <button id="btn-close-float" class="btn-close" title="关闭">×</button>
+        <button id="btn-screenshot-float" class="btn-screenshot" title="截图">📸</button>
+      </div>
       <div class="drag-handle">
         <span class="dot"></span>
         <span class="dot"></span>
         <span class="dot"></span>
       </div>
-      <button id="btn-expand-float" class="btn-expand">▼</button>
+      <button id="btn-expand-float" class="btn-expand" title="展开" style="-webkit-app-region: no-drag;">▼</button>
     </header>
     
     <!-- 极简图片列表 -->
