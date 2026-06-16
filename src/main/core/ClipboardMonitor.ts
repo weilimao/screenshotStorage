@@ -9,7 +9,10 @@ import { ConfigManager } from '../config';
 export class ClipboardMonitor implements IClipboardMonitor {
   private intervalId: NodeJS.Timeout | null = null;
   private lastImageBuffer: Buffer | null = null;
+  private lastBitmapBuffer: Buffer | null = null;
   private lastFilePaths: string = '';
+  private lastFileFingerprint: string = '';
+  private cachedFilePaths: string[] = [];
   private lastDiagFormats: string = '';
   private storageDir: string = '';
   
@@ -114,7 +117,10 @@ export class ClipboardMonitor implements IClipboardMonitor {
 
   public clearCache(): void {
     this.lastImageBuffer = null;
+    this.lastBitmapBuffer = null;
     this.lastFilePaths = '';
+    this.lastFileFingerprint = '';
+    this.cachedFilePaths = [];
   }
 
   public setLastFilePaths(paths: string): void {
@@ -130,8 +136,48 @@ export class ClipboardMonitor implements IClipboardMonitor {
       });
 
       if (!hasFileFormat) {
+        this.lastFileFingerprint = '';
+        this.cachedFilePaths = [];
         return [];
       }
+
+      // 快速生成文件内容的指纹，避免重复执行 PowerShell 造成高 CPU 和卡顿
+      let fingerprint = formats.join(',');
+      const fileNameWFormat = formats.find(f => f.toLowerCase() === 'filenamew');
+      if (fileNameWFormat) {
+        try {
+          const buf = clipboard.readBuffer(fileNameWFormat);
+          if (buf && buf.length > 0) {
+            fingerprint += '|' + buf.toString('hex').substring(0, 500); // 采样前500字节，快且准
+          }
+        } catch {}
+      }
+      if (formats.includes('file-paths')) {
+        try {
+          fingerprint += '|' + clipboard.read('file-paths');
+        } catch {}
+      }
+      if (formats.includes('text/uri-list')) {
+        try {
+          fingerprint += '|' + clipboard.read('text/uri-list');
+        } catch {}
+      }
+      if (formats.includes('text/plain')) {
+        try {
+          const text = clipboard.readText();
+          if (text.length < 1000) {
+            fingerprint += '|' + text;
+          }
+        } catch {}
+      }
+
+      // 如果指纹没有变，直接使用缓存，跳过繁重的 PowerShell / IO 逻辑
+      if (fingerprint === this.lastFileFingerprint) {
+        return this.cachedFilePaths;
+      }
+      this.lastFileFingerprint = fingerprint;
+
+      let paths: string[] = [];
 
       // 1. Windows 平台特化提取：通过 PowerShell 解决延迟渲染与原生文件路径的 100% 捕获
       if (process.platform === 'win32') {
@@ -139,69 +185,75 @@ export class ClipboardMonitor implements IClipboardMonitor {
           const cmd = `powershell -NoProfile -Command "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; (Get-Clipboard -Format FileDropList).FullName"`;
           const stdout = require('child_process').execSync(cmd, { encoding: 'utf8', timeout: 1500 });
           if (stdout) {
-            const paths = stdout.split('\n')
+            const pList = stdout.split('\n')
               .map((p: string) => p.trim())
               .filter((p: string) => p !== '' && fs.existsSync(p));
-            if (paths.length > 0) return paths;
+            if (pList.length > 0) {
+              paths = pList;
+            }
           }
         } catch (err) {
           console.error('Failed to get clipboard files via powershell:', err);
         }
       }
 
-      // 2. FileNameW (跨平台或 Windows PowerShell 异常降级 fallback)
-      const fileNameWFormat = formats.find(f => f.toLowerCase() === 'filenamew');
-      if (fileNameWFormat) {
+      if (paths.length === 0 && fileNameWFormat) {
+        // 2. FileNameW (跨平台或 Windows PowerShell 异常降级 fallback)
         const buffer = clipboard.readBuffer(fileNameWFormat);
         if (buffer && buffer.length > 0) {
           const str = buffer.toString('utf16le');
           // Windows CF_HDROP (FileNameW) 缓冲区头部有 DROPFILES 结构体（20字节），但 split '\0' 后能过滤出部分有效路径，降级容错
-          const paths = str.split('\0').filter(p => p.trim() !== '' && fs.existsSync(p));
-          if (paths.length > 0) return paths;
+          const pList = str.split('\0').filter(p => p.trim() !== '' && fs.existsSync(p));
+          if (pList.length > 0) paths = pList;
         }
       }
       
       // 3. file-paths (Electron 提供的备用格式)
-      if (formats.includes('file-paths')) {
+      if (paths.length === 0 && formats.includes('file-paths')) {
         try {
           const pathsStr = clipboard.read('file-paths');
           if (pathsStr) {
-            const paths = JSON.parse(pathsStr);
-            if (Array.isArray(paths) && paths.length > 0) {
-              const validPaths = paths.filter(p => fs.existsSync(p));
-              if (validPaths.length > 0) return validPaths;
+            const pList = JSON.parse(pathsStr);
+            if (Array.isArray(pList) && pList.length > 0) {
+              const validPaths = pList.filter(p => fs.existsSync(p));
+              if (validPaths.length > 0) paths = validPaths;
             }
           }
         } catch {}
       }
 
       // 4. text/uri-list (URI 协议列表，需解码)
-      if (formats.includes('text/uri-list')) {
+      if (paths.length === 0 && formats.includes('text/uri-list')) {
         const uriList = clipboard.read('text/uri-list');
         if (uriList) {
-          const paths = uriList.split('\n')
+          const pList = uriList.split('\n')
             .map(line => line.trim())
             .filter(line => line.startsWith('file://'))
             .map(line => {
               try { return fileURLToPath(line); } catch { return ''; }
             })
             .filter(p => p !== '' && fs.existsSync(p));
-          if (paths.length > 0) return paths;
+          if (pList.length > 0) paths = pList;
         }
       }
 
       // 5. text/plain (如果纯文本是一条合法的本地存在文件路径)
-      const plainText = clipboard.readText();
-      if (plainText) {
-        const lines = plainText.split('\n')
-          .map(line => line.trim())
-          .filter(line => {
-            try {
-              return fs.existsSync(line) && fs.statSync(line).isFile();
-            } catch { return false; }
-          });
-        if (lines.length > 0) return lines;
+      if (paths.length === 0) {
+        const plainText = clipboard.readText();
+        if (plainText) {
+          const lines = plainText.split('\n')
+            .map(line => line.trim())
+            .filter(line => {
+              try {
+                return fs.existsSync(line) && fs.statSync(line).isFile();
+              } catch { return false; }
+            });
+          if (lines.length > 0) paths = lines;
+        }
       }
+
+      this.cachedFilePaths = paths;
+      return paths;
     } catch (err) {
       console.error('Failed to parse file paths from clipboard:', err);
     }
@@ -241,16 +293,19 @@ export class ClipboardMonitor implements IClipboardMonitor {
       // 2. 原有的截图（内存 Image）逻辑
       const image = clipboard.readImage();
       if (image.isEmpty()) {
+        this.lastBitmapBuffer = null;
+        this.lastImageBuffer = null;
         return;
       }
+
+      // 获取未压缩的原始位图像素进行高速内存对比，替代 expensive 的 toPNG()
+      const bitmapBuffer = image.getBitmap();
+      if (this.lastBitmapBuffer && this.lastBitmapBuffer.equals(bitmapBuffer)) {
+        return;
+      }
+      this.lastBitmapBuffer = bitmapBuffer;
 
       const pngBuffer = image.toPNG();
-      
-      // 比对是否与上一次图片相同
-      if (this.lastImageBuffer && this.lastImageBuffer.equals(pngBuffer)) {
-        return;
-      }
-
       this.lastImageBuffer = pngBuffer;
 
       if (this.imageCapturedCallback) {
@@ -336,7 +391,13 @@ export class ClipboardMonitor implements IClipboardMonitor {
       this.lastFilePaths = filePaths.join(';');
       
       const image = clipboard.readImage();
-      this.lastImageBuffer = image.isEmpty() ? null : image.toPNG();
+      if (image.isEmpty()) {
+        this.lastBitmapBuffer = null;
+        this.lastImageBuffer = null;
+      } else {
+        this.lastBitmapBuffer = image.getBitmap();
+        this.lastImageBuffer = image.toPNG();
+      }
     } catch (err) {
       console.error('Failed to ignore current clipboard content:', err);
     }
