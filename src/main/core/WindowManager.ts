@@ -65,10 +65,12 @@ export class WindowManager implements IWindowManager {
         {
           label: '显示主面板',
           click: () => {
-            if (this.mainWindow) {
+            if (this.mainWindow && !this.mainWindow.isDestroyed()) {
               this.mainWindow.setSkipTaskbar(false); // 恢复在任务栏中显示
               this.mainWindow.show();
               this.mainWindow.focus();
+            } else {
+              this.createMainWindow(true);
             }
           }
         },
@@ -97,10 +99,12 @@ export class WindowManager implements IWindowManager {
 
       // 双击托盘图标显示主窗口
       this.tray.on('double-click', () => {
-        if (this.mainWindow) {
+        if (this.mainWindow && !this.mainWindow.isDestroyed()) {
           this.mainWindow.setSkipTaskbar(false); // 恢复在任务栏中显示
           this.mainWindow.show();
           this.mainWindow.focus();
+        } else {
+          this.createMainWindow(true);
         }
       });
     } catch (err) {
@@ -149,20 +153,22 @@ export class WindowManager implements IWindowManager {
       }
     });
 
-    // 拦截关闭按钮事件，强行命令系统任务栏移除此窗口图标并将其隐藏到后台
+    // 拦截关闭按钮事件，将主面板直接销毁释放内存，而不是隐藏到后台占用资源
     this.mainWindow.on('close', (e) => {
       if (!this.isQuitting) {
         e.preventDefault();
         if (this.mainWindow) {
-          this.mainWindow.setSkipTaskbar(true); // 从任务栏隐藏
-          this.mainWindow.hide(); // 隐藏主窗口
+          this.mainWindow.destroy(); // 直接销毁主窗口释放内存
         }
       }
     });
 
     this.mainWindow.on('closed', () => {
       this.mainWindow = null;
-      this.closeFloatWindow();
+      // 如果不是正在退出，不要关闭悬浮窗，实现后台独立可用
+      if (this.isQuitting) {
+        this.closeFloatWindow();
+      }
     });
 
     // 默认使用系统浏览器打开链接

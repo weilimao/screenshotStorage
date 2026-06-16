@@ -3,6 +3,10 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { exec, execSync } from 'child_process';
 import { ConfigManager } from './config';
+
+// 注入 Chromium 命令行参数以优化内存占用
+app.commandLine.appendSwitch('js-flags', '--max-old-space-size=128');
+app.commandLine.appendSwitch('process-per-site');
 import { StorageManager } from './core/StorageManager';
 import { WindowManager } from './core/WindowManager';
 import { ClipboardMonitor } from './core/ClipboardMonitor';
@@ -288,7 +292,9 @@ function initApp() {
   });
 
   clipboardMonitor.start();
-  windowManager.createMainWindow(!isSilentStart);
+  if (!isSilentStart) {
+    windowManager.createMainWindow(true);
+  }
 
   // 截图完成后，如果之前因为点击浮窗临时取消了 alwaysOnTop，则将其恢复为置顶
   shortcutManager.onScreenshotFinished(() => {
@@ -330,14 +336,6 @@ app.whenReady().then(() => {
 });
 
 app.on('window-all-closed', () => {
-  // 停止监听器
-  if (clipboardMonitor) {
-    clipboardMonitor.stop();
-  }
-  if (shortcutManager) {
-    shortcutManager.unregisterShortcut();
-  }
-  if (process.platform !== 'darwin') {
-    app.quit();
-  }
+  // 保持后台运行，主面板关闭只销毁窗口释放内存，托盘仍旧保持运行监听
+  // 只有当用户在托盘菜单中选择“退出程序”时，主进程才会真正退出。
 });
