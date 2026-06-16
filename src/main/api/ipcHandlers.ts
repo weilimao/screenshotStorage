@@ -283,20 +283,9 @@ export function registerIpcHandlers(
             `$dataObject.SetText('${escapedPath}'); ` +
             `[System.Windows.Forms.Clipboard]::SetDataObject($dataObject, $true);`;
           
-          exec(`powershell -NoProfile -Command "${psCommand}"`, (error, stdout, stderr) => {
+          exec(`powershell -NoProfile -Command "${psCommand}"`, (error) => {
             if (error) {
               console.error('Failed to copy file via PowerShell:', error);
-              try {
-                const fs = require('fs');
-                let logStr = `\n[${new Date().toISOString()}] === POWERSHELL COPY ERROR ===\n`;
-                logStr += `FilePath: ${filePath}\n`;
-                logStr += `Error: ${error.message}\n`;
-                logStr += `Stderr: ${stderr}\n`;
-                logStr += `=== END POWERSHELL ERROR ===\n`;
-                fs.appendFileSync('d:\\testCode\\screenshotStorage\\clipboard_diagnosis.log', logStr);
-              } catch (logErr) {
-                console.error('Failed to write ps error log:', logErr);
-              }
               resolve(false);
             } else {
               clipboardMonitor.ignoreCurrentClipboardContent();

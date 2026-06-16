@@ -8,12 +8,11 @@ import { ConfigManager } from '../config';
 
 export class ClipboardMonitor implements IClipboardMonitor {
   private intervalId: NodeJS.Timeout | null = null;
-  private lastImageBuffer: Buffer | null = null;
-  private lastBitmapBuffer: Buffer | null = null;
+  private lastImageSize: { width: number; height: number } | null = null;
+  private lastThumbnailBuffer: Buffer | null = null;
   private lastFilePaths: string = '';
   private lastFileFingerprint: string = '';
   private cachedFilePaths: string[] = [];
-  private lastDiagFormats: string = '';
   private storageDir: string = '';
   
   private imageCapturedCallback: ((buf: Buffer) => void) | null = null;
@@ -116,8 +115,8 @@ export class ClipboardMonitor implements IClipboardMonitor {
   }
 
   public clearCache(): void {
-    this.lastImageBuffer = null;
-    this.lastBitmapBuffer = null;
+    this.lastImageSize = null;
+    this.lastThumbnailBuffer = null;
     this.lastFilePaths = '';
     this.lastFileFingerprint = '';
     this.cachedFilePaths = [];
@@ -263,21 +262,6 @@ export class ClipboardMonitor implements IClipboardMonitor {
   private checkClipboard(): void {
     try {
       const formats = clipboard.availableFormats();
-      const formatsStr = formats.join(',');
-      if (formatsStr !== this.lastDiagFormats) {
-        this.lastDiagFormats = formatsStr;
-        
-        let logStr = `\n[${new Date().toISOString()}] === CLIPBOARD DIAGNOSIS ===\n`;
-        logStr += `Available Formats: ${formatsStr}\n`;
-        try { logStr += `  Read Text: ${JSON.stringify(clipboard.readText())}\n`; } catch {}
-        logStr += `=== END DIAGNOSIS ===\n`;
-        
-        try {
-          fs.appendFileSync('d:\\testCode\\screenshotStorage\\clipboard_diagnosis.log', logStr);
-        } catch (err) {
-          console.error('Failed to write diagnosis log:', err);
-        }
-      }
 
       // 1. 优先处理复制的物理文件路径（包含视频与普通图片文件）
       const filePaths = this.getFilePathsFromClipboard(formats);
@@ -293,20 +277,33 @@ export class ClipboardMonitor implements IClipboardMonitor {
       // 2. 原有的截图（内存 Image）逻辑
       const image = clipboard.readImage();
       if (image.isEmpty()) {
-        this.lastBitmapBuffer = null;
-        this.lastImageBuffer = null;
+        this.lastImageSize = null;
+        this.lastThumbnailBuffer = null;
         return;
       }
 
-      // 获取未压缩的原始位图像素进行高速内存对比，替代 expensive 的 toPNG()
-      const bitmapBuffer = image.getBitmap();
-      if (this.lastBitmapBuffer && this.lastBitmapBuffer.equals(bitmapBuffer)) {
+      // 1. 先对比尺寸，尺寸不同一定是新图，不需要做内存拷贝
+      const size = image.getSize();
+      let isSame = false;
+      if (this.lastImageSize && this.lastImageSize.width === size.width && this.lastImageSize.height === size.height) {
+        // 2. 尺寸相同时，生成 16x16 极小缩略图进行比对（位图大小仅 1KB），极大减轻垃圾回收负担
+        const thumbnail = image.resize({ width: 16, height: 16, quality: 'good' }).getBitmap();
+        if (this.lastThumbnailBuffer && this.lastThumbnailBuffer.equals(thumbnail)) {
+          isSame = true;
+        } else {
+          this.lastThumbnailBuffer = thumbnail;
+        }
+      } else {
+        this.lastImageSize = size;
+        this.lastThumbnailBuffer = image.resize({ width: 16, height: 16, quality: 'good' }).getBitmap();
+      }
+
+      if (isSame) {
         return;
       }
-      this.lastBitmapBuffer = bitmapBuffer;
 
+      // 只有在图片像素确实改变时，才进行 PNG 编码，最大化减少 CPU/内存 开销
       const pngBuffer = image.toPNG();
-      this.lastImageBuffer = pngBuffer;
 
       if (this.imageCapturedCallback) {
         this.imageCapturedCallback(pngBuffer);
@@ -392,11 +389,13 @@ export class ClipboardMonitor implements IClipboardMonitor {
       
       const image = clipboard.readImage();
       if (image.isEmpty()) {
-        this.lastBitmapBuffer = null;
-        this.lastImageBuffer = null;
+        this.lastImageSize = null;
+        this.lastThumbnailBuffer = null;
       } else {
-        this.lastBitmapBuffer = image.getBitmap();
-        this.lastImageBuffer = image.toPNG();
+        // 只需记录尺寸与极小缩略图用于去重，无需做完整 PNG 编码
+        const size = image.getSize();
+        this.lastImageSize = size;
+        this.lastThumbnailBuffer = image.resize({ width: 16, height: 16, quality: 'good' }).getBitmap();
       }
     } catch (err) {
       console.error('Failed to ignore current clipboard content:', err);

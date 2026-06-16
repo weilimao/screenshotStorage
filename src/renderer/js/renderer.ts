@@ -242,6 +242,9 @@ let allRecords: ImageRecord[] = [];
 let currentFilteredRecords: ImageRecord[] = [];
 let currentPreviewIndex: number = -1;
 
+let currentPage = 1;
+const pageSize = 16;
+
 let appConfig: AppConfig = { maxImages: 100, retentionDays: 14, watchFolders: [] };
 
 // 提示框控制
@@ -382,7 +385,10 @@ function isRecordVideo(record: ImageRecord): boolean {
 }
 
 // 刷新图片展示网格
-async function loadImages() {
+async function loadImages(resetPage = false) {
+  if (resetPage) {
+    currentPage = 1;
+  }
   const images = await window.electronAPI.getImages();
   allRecords = images;
   imageGrid.innerHTML = '';
@@ -413,13 +419,45 @@ async function loadImages() {
   });
   currentFilteredRecords = filtered;
   
+  const paginationControls = document.getElementById('pagination-controls');
   if (filtered.length === 0) {
     emptyState.style.display = 'flex';
+    if (paginationControls) paginationControls.style.display = 'none';
   } else {
     emptyState.style.display = 'none';
-    filtered.forEach(img => {
+    
+    // 计算总页数
+    const totalPages = Math.ceil(filtered.length / pageSize) || 1;
+    if (currentPage > totalPages) {
+      currentPage = totalPages;
+    }
+    
+    // 截取当前页的数据进行渲染，实现 DOM 树轻量化，释放旧图片显存
+    const startIndex = (currentPage - 1) * pageSize;
+    const endIndex = Math.min(startIndex + pageSize, filtered.length);
+    const pageData = filtered.slice(startIndex, endIndex);
+    
+    pageData.forEach(img => {
       imageGrid.appendChild(createImageCard(img));
     });
+
+    // 更新分页控制器 UI
+    if (paginationControls) {
+      if (filtered.length <= pageSize) {
+        paginationControls.style.display = 'none';
+      } else {
+        paginationControls.style.display = 'flex';
+        
+        const btnPrev = document.getElementById('btn-prev-page') as HTMLButtonElement;
+        const btnNext = document.getElementById('btn-next-page') as HTMLButtonElement;
+        const pageInfo = document.getElementById('page-info') as HTMLSpanElement;
+        
+        pageInfo.innerText = `第 ${currentPage} / ${totalPages} 页`;
+        
+        btnPrev.disabled = currentPage === 1;
+        btnNext.disabled = currentPage === totalPages;
+      }
+    }
   }
 
   // 刷新预览界面的按钮可见度（如果预览已经打开）
@@ -614,8 +652,37 @@ async function init() {
     }
   });
 
+  // 绑定主面板的分页控制事件
+  const btnPrevPage = document.getElementById('btn-prev-page') as HTMLButtonElement | null;
+  const btnNextPage = document.getElementById('btn-next-page') as HTMLButtonElement | null;
+
+  if (btnPrevPage) {
+    btnPrevPage.addEventListener('click', () => {
+      if (currentPage > 1) {
+        currentPage--;
+        loadImages();
+        // 滚动到顶部以提供更好的翻页体验
+        const container = document.querySelector('.image-grid-container');
+        if (container) container.scrollTop = 0;
+      }
+    });
+  }
+
+  if (btnNextPage) {
+    btnNextPage.addEventListener('click', () => {
+      const totalPages = Math.ceil(currentFilteredRecords.length / pageSize) || 1;
+      if (currentPage < totalPages) {
+        currentPage++;
+        loadImages();
+        // 滚动到顶部以提供更好的翻页体验
+        const container = document.querySelector('.image-grid-container');
+        if (container) container.scrollTop = 0;
+      }
+    });
+  }
+
   // 1. 加载初始数据
-  await loadImages();
+  await loadImages(true);
   await loadConfig();
   await updateFloatButtonState();
 
@@ -667,7 +734,45 @@ async function init() {
 
   // 3. 注册主进程推送事件的监听
   window.electronAPI.onNewImage(async (record) => {
-    await loadImages();
+    // 增量更新：直接将新卡片插入列表头部，无需清空整个 DOM 网格重建
+    // 只有在无法确定新记录是否属于当前 Tab 过滤或页面已失去同步时，才退化为全量刷新
+    const matchesTab =
+      currentTab === 'all' ||
+      (currentTab === 'video' && isRecordVideo(record)) ||
+      (currentTab === 'image' && !isRecordVideo(record));
+
+    if (matchesTab && currentPage === 1) {
+      // 1. 更新内存数据
+      allRecords.unshift(record);
+      currentFilteredRecords.unshift(record);
+
+      // 2. 更新计数气泡
+      const total = allRecords.length;
+      let imageCount = 0;
+      let videoCount = 0;
+      allRecords.forEach(img => { isRecordVideo(img) ? videoCount++ : imageCount++; });
+      if (countAllEl) countAllEl.innerText = total.toString();
+      if (countImageEl) countImageEl.innerText = imageCount.toString();
+      if (countVideoEl) countVideoEl.innerText = videoCount.toString();
+
+      // 3. 插入卡片到网格头部
+      const newCard = createImageCard(record);
+      if (imageGrid.firstChild) {
+        imageGrid.insertBefore(newCard, imageGrid.firstChild);
+      } else {
+        imageGrid.appendChild(newCard);
+        emptyState.style.display = 'none';
+      }
+
+      // 4. 若当前页已满 pageSize 张，移除末尾多出的卡片保持数量一致
+      const cards = imageGrid.querySelectorAll('.image-card');
+      if (cards.length > pageSize) {
+        imageGrid.removeChild(cards[cards.length - 1]);
+      }
+    } else {
+      // Tab 不匹配或不在第一页：全量刷新确保一致性
+      await loadImages(true);
+    }
   });
 
   window.electronAPI.onImageDeleted(async (id) => {
@@ -745,7 +850,7 @@ async function init() {
         btn.classList.add('active');
         const type = btn.getAttribute('data-type') as 'all' | 'image' | 'video';
         currentTab = type || 'all';
-        loadImages();
+        loadImages(true);
       });
     });
   }

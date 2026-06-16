@@ -6,7 +6,6 @@ import { ConfigManager } from './config';
 
 // 注入 Chromium 命令行参数以优化内存占用
 app.commandLine.appendSwitch('js-flags', '--max-old-space-size=128');
-app.commandLine.appendSwitch('process-per-site');
 import { StorageManager } from './core/StorageManager';
 import { WindowManager } from './core/WindowManager';
 import { ClipboardMonitor } from './core/ClipboardMonitor';

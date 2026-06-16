@@ -13,6 +13,8 @@ export class StorageManager implements IStorageManager {
   private metadataPath: string;
   private records: ImageRecord[] = [];
   private lastImageFingerprint: ImageFingerprint | null = null;
+  /** 标记记录是否需要在下次 getImages 时做磁盘存在性校验 */
+  private isDirty: boolean = false;
 
   constructor(
     private storageDir: string,
@@ -147,6 +149,11 @@ export class StorageManager implements IStorageManager {
   }
 
   public async getImages(): Promise<ImageRecord[]> {
+    // 仅在有删除/清空/迁移等操作后（isDirty=true）才做全量磁盘存在性校验，避免每次都产生高频 IO
+    if (!this.isDirty) {
+      return this.records;
+    }
+
     // 过滤掉本地文件已经被手动删除的无效记录
     const validRecords: ImageRecord[] = [];
     let changed = false;
@@ -164,6 +171,7 @@ export class StorageManager implements IStorageManager {
       await this.saveMetadata();
     }
 
+    this.isDirty = false;
     return this.records;
   }
 
@@ -179,6 +187,7 @@ export class StorageManager implements IStorageManager {
         console.error(`Failed to delete file ${record.filepath}:`, err);
       }
       this.records.splice(index, 1);
+      this.isDirty = true;
       await this.saveMetadata();
     }
   }
@@ -207,6 +216,7 @@ export class StorageManager implements IStorageManager {
       }
     }
     this.records = toKeep;
+    this.isDirty = true;
     await this.saveMetadata();
   }
 
@@ -247,6 +257,7 @@ export class StorageManager implements IStorageManager {
     // 2. 更新成员变量为新的目录
     this.storageDir = newDir;
     this.metadataPath = path.join(newDir, 'metadata.json');
+    this.isDirty = true; // 迁移后首次 getImages 需重新校验文件存在性
 
     // 3. 写入新的元数据文件
     await this.saveMetadata();

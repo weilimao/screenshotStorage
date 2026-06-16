@@ -33,7 +33,8 @@ function renderCard(record: ImageRecord): HTMLDivElement {
   
   let mediaHtml = '';
   if (isVideo) {
-    mediaHtml = `<video src="${record.filepath}" muted loop autoplay style="width: 100%; height: 100%; object-fit: contain; pointer-events: none;"></video>`;
+    // preload=metadata 仅加载元信息，鼠标悬停才播放，避免常驻 GPU 解码占用显存
+    mediaHtml = `<video src="${record.filepath}" muted loop preload="metadata" style="width: 100%; height: 100%; object-fit: contain; pointer-events: none;"></video>`;
   } else {
     mediaHtml = `<img src="${record.filepath}" alt="Screenshot">`;
   }
@@ -90,6 +91,19 @@ function renderCard(record: ImageRecord): HTMLDivElement {
   imgWrapper.addEventListener('dblclick', () => {
     window.electronAPI.triggerMainPreview(record.filepath);
   });
+
+  // 视频悬停播放：鼠标进入才解码播放，离开即暂停，节省 GPU 内存
+  if (isVideo) {
+    const videoEl = card.querySelector('video') as HTMLVideoElement | null;
+    if (videoEl) {
+      imgWrapper.addEventListener('mouseenter', () => {
+        videoEl.play().catch(() => {});
+      });
+      imgWrapper.addEventListener('mouseleave', () => {
+        videoEl.pause();
+      });
+    }
+  }
 
   // 绑定预览按钮点击
   const previewBtn = card.querySelector('.btn-preview-float') as HTMLButtonElement;
