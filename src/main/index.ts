@@ -291,6 +291,10 @@ function initApp() {
   });
 
   clipboardMonitor.start();
+  
+  // 无论是否静默启动，均确保系统托盘图标被创建，以便于后台挂载与交互
+  windowManager.ensureTray();
+
   if (!isSilentStart) {
     windowManager.createMainWindow(true);
   }

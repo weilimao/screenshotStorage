@@ -39,6 +39,7 @@ export interface IWindowManager {
   sendToFloatWindow(channel: string, ...args: any[]): void;
   getMainWindow(): any;
   getFloatWindow(): any;
+  ensureTray(): void;
 }
 
 export interface AppConfig {

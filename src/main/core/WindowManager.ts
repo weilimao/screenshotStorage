@@ -112,6 +112,12 @@ export class WindowManager implements IWindowManager {
     }
   }
 
+  public ensureTray(): void {
+    if (!this.tray) {
+      this.createTray();
+    }
+  }
+
   public createMainWindow(showInitially = true): void {
     if (this.mainWindow) {
       if (showInitially) {
@@ -122,10 +128,8 @@ export class WindowManager implements IWindowManager {
       return;
     }
 
-    // 首次创建主窗口时初始化托盘
-    if (!this.tray) {
-      this.createTray();
-    }
+    // 首次创建主窗口时确保托盘已创建
+    this.ensureTray();
 
     const iconPath = this.getWindowIconPath();
     this.mainWindow = new BrowserWindow({

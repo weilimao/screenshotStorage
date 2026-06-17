@@ -52,10 +52,12 @@ export function registerIpcHandlers(
     try {
       const silentStart = config.silentStart || false;
       config.openAtLogin = app.isPackaged
-        ? app.getLoginItemSettings({
-            path: process.execPath,
-            args: silentStart ? ['--hidden'] : []
-          }).openAtLogin
+        ? (process.platform === 'win32'
+            ? app.getLoginItemSettings({
+                path: process.execPath,
+                args: silentStart ? ['--hidden'] : []
+              }).openAtLogin
+            : app.getLoginItemSettings().openAtLogin)
         : (config.openAtLogin || false);
     } catch (err) {
       console.error('Failed to get login item settings:', err);
@@ -97,12 +99,20 @@ export function registerIpcHandlers(
         const silentStart = newConfig.silentStart !== undefined ? newConfig.silentStart : currentConfig.silentStart;
 
         if (app.isPackaged) {
-          app.setLoginItemSettings({
-            openAtLogin: openAtLogin,
-            path: process.execPath,
-            args: openAtLogin && silentStart ? ['--hidden'] : [],
-            openAsHidden: silentStart,
-          });
+          if (process.platform === 'win32') {
+            app.setLoginItemSettings({
+              openAtLogin: openAtLogin,
+              path: process.execPath,
+              args: openAtLogin && silentStart ? ['--hidden'] : [],
+              openAsHidden: silentStart,
+            });
+          } else {
+            // macOS / Linux: 官方建议不指定 path 和 args
+            app.setLoginItemSettings({
+              openAtLogin: openAtLogin,
+              openAsHidden: silentStart,
+            });
+          }
         } else {
           console.log(`[Dev] Mock setLoginItemSettings to openAtLogin=${openAtLogin}, silentStart=${silentStart}`);
         }
@@ -121,10 +131,12 @@ export function registerIpcHandlers(
     try {
       const silentStart = config.silentStart || false;
       config.openAtLogin = app.isPackaged
-        ? app.getLoginItemSettings({
-            path: process.execPath,
-            args: silentStart ? ['--hidden'] : []
-          }).openAtLogin
+        ? (process.platform === 'win32'
+            ? app.getLoginItemSettings({
+                path: process.execPath,
+                args: silentStart ? ['--hidden'] : []
+              }).openAtLogin
+            : app.getLoginItemSettings().openAtLogin)
         : (config.openAtLogin || false);
     } catch (err) {
       config.openAtLogin = newConfig.openAtLogin !== undefined ? newConfig.openAtLogin : (config.openAtLogin || false);
