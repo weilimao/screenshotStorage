@@ -1,0 +1,71 @@
+/* 截图保存成功屏幕中央独立浮窗样式 */
+:root {
+  --accent-gradient: linear-gradient(135deg, #7c4dff 0%, #00e5ff 100%);
+  --text-main: #f3f3f6;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html, body {
+  width: 100%;
+  height: 100%;
+  background: transparent;
+  overflow: hidden;
+  font-family: 'Outfit', -apple-system, 'Segoe UI', 'Microsoft YaHei', sans-serif;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+body {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 1;
+  transition: opacity 0.4s ease;
+}
+
+body.hide {
+  opacity: 0;
+}
+
+/* 胶囊卡片 */
+.toast-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 18px 28px;
+  border-radius: 18px;
+  background: var(--accent-gradient);
+  color: #fff;
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.45), 0 2px 8px rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  white-space: nowrap;
+}
+
+.toast-icon {
+  font-size: 26px;
+  line-height: 1;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.3));
+}
+
+.toast-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.toast-title {
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+}
+
+.toast-subtitle {
+  font-size: 12px;
+  opacity: 0.88;
+  font-weight: 400;
+}

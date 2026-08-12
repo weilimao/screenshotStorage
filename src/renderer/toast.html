@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>截图已保存</title>
+  <link rel="stylesheet" href="css/toast.css">
+</head>
+<body>
+  <div class="toast-card">
+    <div class="toast-icon">✅</div>
+    <div class="toast-text">
+      <div class="toast-title">截图已保存</div>
+      <div class="toast-subtitle">已复制到剪贴板</div>
+    </div>
+  </div>
+  <script>
+    // 1.5s 后开始淡出（CSS 动画 0.4s），2s 由主进程兜底 destroy。
+    // 多次触发同一窗口(toast 复用)时,重置 hide 类后再触发,保证每次都从可见态淡出。
+    try {
+      document.body.classList.remove('hide');
+    } catch (e) {}
+    setTimeout(function () {
+      try { document.body.classList.add('hide'); } catch (e) {}
+    }, 1500);
+  </script>
+</body>
+</html>

@@ -1,6 +1,6 @@
 {
   "name": "screenshot-storage",
-  "version": "1.1.4",
+  "version": "1.1.5",
   "description": "截图智能暂存箱 - 解决 CLI 终端无法粘贴图片的问题",
   "main": "dist/main/index.js",
   "scripts": {
@@ -9,12 +9,13 @@
     "start": "tsc && electron .",
     "dev": "tsc && electron .",
     "dist": "npm run build && electron-builder",
+    "dist:win": "npm run build && electron-builder --win",
     "publish": "node scripts/publish.js"
   },
   "build": {
     "appId": "com.screenshot.storage",
     "releaseInfo": {
-      "releaseNotes": "1. 修复静默自启无托盘图标：解耦系统托盘与主窗口初始化，解决在静默启动时后台运行但无托盘图标、无法交互的严重 Bug。\n2. 优化 macOS 开机自启：区分平台配置 setLoginItemSettings 策略。针对 macOS 平台去除 path 和 args 环境变量设置，避免 macOS 错误唤起 Unix 底层二进制文件，全面提升 macOS 端自启稳定性。"
+      "releaseNotes": "1. 新增截图成功屏中央 Toast 独立浮窗：微信式快捷截图完成后，自动在截图所在的屏幕中央弹出独立的成功提示浮窗，支持混合 DPI 与多屏感知。\n2. 优化 Windows CMD 打包脚本：将 build.bat 编码调整为 ANSI/GBK 格式，修复脚本在命令提示符下中文乱码及语句中断 Bug。"
     },
     "productName": "截图智能暂存箱",
     "artifactName": "screenshot-storage-${version}-${os}-${arch}.${ext}",

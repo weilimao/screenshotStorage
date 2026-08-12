@@ -1,4 +1,4 @@
-import { BrowserWindow, shell, Tray, Menu, nativeImage, app, NativeImage } from 'electron';
+import { BrowserWindow, shell, Tray, Menu, nativeImage, app, NativeImage, screen } from 'electron';
 import { IWindowManager } from '../../shared/types';
 import * as path from 'path';
 import * as fs from 'fs';
@@ -12,11 +12,14 @@ export class WindowManager implements IWindowManager {
   private tray: Tray | null = null;
   private trayIcon: NativeImage | null = null; // 强引用托盘图标防止GC垃圾回收
   private isQuitting = false;
+  private toastWindow: BrowserWindow | null = null;
+  private toastCleanupTimer: NodeJS.Timeout | null = null;
 
   constructor(
     private preloadPath: string,
     private mainHtmlPath: string,
-    private floatHtmlPath: string
+    private floatHtmlPath: string,
+    private toastHtmlPath: string
   ) {
     // 挂载全局退出钩子，保证 Cmd+Q 或托盘菜单的退出选项能顺利结束进程
     app.on('before-quit', () => {
@@ -246,5 +249,125 @@ export class WindowManager implements IWindowManager {
 
   public getFloatWindow(): BrowserWindow | null {
     return this.floatWindow;
+  }
+
+  /**
+   * 解析 toast 应当居中的 workArea。
+   * 解析优先级:targetDisplay.id 精确命中 → targetDisplay 坐标命中 → 光标当前所在屏 → 主屏兜底。
+   * 任一步骤异常都向下一级回退,绝不抛错,确保 toast 一定弹得出。
+   */
+  private resolveToastWorkArea(targetDisplay?: { id?: number; x?: number; y?: number; width?: number; height?: number }): { x: number; y: number; width: number; height: number } {
+    try {
+      const all = screen.getAllDisplays();
+      // 1) 按 id 精确命中
+      if (targetDisplay && typeof targetDisplay.id === 'number') {
+        const hit = all.find((d) => d.id === targetDisplay.id);
+        if (hit && hit.workArea) return hit.workArea;
+      }
+      // 2) 按 targetDisplay 的左上角坐标命中某 display
+      if (targetDisplay && typeof targetDisplay.x === 'number' && typeof targetDisplay.y === 'number') {
+        const hit = all.find((d) => {
+          const b = d.bounds;
+          return targetDisplay.x! >= b.x && targetDisplay.x! < b.x + b.width &&
+                 targetDisplay.y! >= b.y && targetDisplay.y! < b.y + b.height;
+        });
+        if (hit && hit.workArea) return hit.workArea;
+      }
+      // 3) 光标当前所在屏
+      try {
+        const cursor = screen.getCursorScreenPoint();
+        const near = screen.getDisplayNearestPoint(cursor);
+        if (near && near.workArea) return near.workArea;
+      } catch {
+        // 忽略,继续兜底
+      }
+      // 4) 主屏兜底
+      return screen.getPrimaryDisplay().workArea;
+    } catch {
+      return screen.getPrimaryDisplay().workArea;
+    }
+  }
+
+  /**
+   * 截图保存成功后弹出独立的「✅ 截图已保存」浮窗,1.5s 淡出。
+   * 该浮窗不依赖主面板是否打开,无论静默启动与否都能看到反馈。
+   * 多次调用会复用同一个 toast 窗以避免堆叠(先关旧的再开新的)。
+   * @param targetDisplay 可选,本次截图所在的显示器信息(来自 react-screenshots 回传的 data.display);
+   *        传入则在该屏 workArea 中央弹出;否则以「光标当前所在屏」居中,再退到主屏。
+   */
+  public showScreenshotSuccessToast(targetDisplay?: { id?: number; x?: number; y?: number; width?: number; height?: number }): void {
+    try {
+      // 若已有 toast 在显示,先清理旧的(避免连续截图时多张叠加)
+      if (this.toastCleanupTimer) {
+        clearTimeout(this.toastCleanupTimer);
+        this.toastCleanupTimer = null;
+      }
+      if (this.toastWindow && !this.toastWindow.isDestroyed()) {
+        this.toastWindow.destroy();
+      }
+      this.toastWindow = null;
+
+      // 解析目标屏 workArea:按 targetDisplay.id 精确匹配 → 按其坐标命中 → 光标当前屏 → 主屏兜底
+      const workArea = this.resolveToastWorkArea(targetDisplay);
+      const width = 320;
+      const height = 96;
+      const x = Math.round(workArea.x + (workArea.width - width) / 2);
+      const y = Math.round(workArea.y + (workArea.height - height) / 2);
+
+      this.toastWindow = new BrowserWindow({
+        width,
+        height,
+        x,
+        y,
+        frame: false,
+        resizable: false,
+        movable: false,
+        minimizable: false,
+        maximizable: false,
+        fullscreenable: false,
+        transparent: true,
+        show: false,
+        skipTaskbar: true,
+        focusable: false,
+        alwaysOnTop: true,
+        hasShadow: false,
+        backgroundColor: '#00000000',
+        webPreferences: {
+          preload: this.preloadPath,
+          contextIsolation: true,
+          nodeIntegration: false,
+          sandbox: false
+        }
+      });
+
+      this.toastWindow.setAlwaysOnTop(true, 'pop-up-menu');
+      this.toastWindow.setSkipTaskbar(true);
+
+      this.toastWindow.loadFile(this.toastHtmlPath);
+
+      this.toastWindow.once('ready-to-show', () => {
+        if (this.toastWindow && !this.toastWindow.isDestroyed()) {
+          this.toastWindow.showInactive();
+        }
+      });
+
+      this.toastWindow.on('closed', () => {
+        if (this.toastWindow && !this.toastWindow.isDestroyed()) {
+          this.toastWindow = null;
+        }
+        this.toastWindow = null;
+      });
+
+      // CSS 内 1.5s 后开始淡出(0.4s);主进程 2.0s 兜底 destroy,防卡死泄漏
+      this.toastCleanupTimer = setTimeout(() => {
+        this.toastCleanupTimer = null;
+        if (this.toastWindow && !this.toastWindow.isDestroyed()) {
+          this.toastWindow.destroy();
+        }
+        this.toastWindow = null;
+      }, 2000);
+    } catch (err) {
+      console.error('[WindowManager] Failed to show screenshot success toast:', err);
+    }
   }
 }

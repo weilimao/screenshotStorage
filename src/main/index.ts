@@ -140,10 +140,11 @@ function initApp() {
   const preloadPath = path.join(__dirname, '../renderer/js/preload.js');
   const mainHtmlPath = path.join(__dirname, '../../src/renderer/index.html');
   const floatHtmlPath = path.join(__dirname, '../../src/renderer/float.html');
+  const toastHtmlPath = path.join(__dirname, '../../src/renderer/toast.html');
 
   // 2. 依赖实例化 (Dependency Injection)
   storageManager = new StorageManager(storageDir, configManager);
-  windowManager = new WindowManager(preloadPath, mainHtmlPath, floatHtmlPath);
+  windowManager = new WindowManager(preloadPath, mainHtmlPath, floatHtmlPath, toastHtmlPath);
   clipboardMonitor = new ClipboardMonitor(configManager);
   clipboardMonitor.setStorageDir(storageDir);
   updateManager = new UpdateManager(windowManager);
@@ -257,7 +258,7 @@ function initApp() {
   }
 
   // 注册微信式截图完成后的回调存储逻辑
-  shortcutManager.onScreenshotCaptured(async (buffer) => {
+  shortcutManager.onScreenshotCaptured(async (buffer, data) => {
     try {
       const record = await storageManager.saveImage(buffer);
       if (!record) return; // 自动去重过滤
@@ -285,6 +286,11 @@ function initApp() {
       // 推送给所有窗口更新
       windowManager.sendToMainWindow(IPC_CHANNELS.ON_NEW_IMAGE, record);
       windowManager.sendToFloatWindow(IPC_CHANNELS.ON_NEW_IMAGE, record);
+
+      // 截图保存成功后,在「该次截图所在屏」中央弹出独立成功提示浮窗(无论主面板是否打开都可见)。
+      // data.display 为截图发生时的显示器信息,跟随它以保证副屏截图时浮窗也在副屏而非主屏。
+      const targetDisplay = data && data.display ? data.display : undefined;
+      windowManager.showScreenshotSuccessToast(targetDisplay);
     } catch (err) {
       console.error('Failed to handle screenshots event callback:', err);
     }

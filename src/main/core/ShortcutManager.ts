@@ -1,14 +1,19 @@
 import { globalShortcut, screen, ipcMain, BrowserWindow } from 'electron';
 import Screenshots from 'electron-screenshots';
 import { ConfigManager } from '../config';
+import { ScreenshotWindowDetector, DisplayInfo } from './ScreenshotWindowDetector';
+import { SCREENSHOT_OVERLAY_SCRIPT } from './screenshotOverlayScript';
 
 export class ShortcutManager {
   private currentShortcut: string = '';
   private screenshotInstances: Screenshots[] = [];
   private isCapturing: boolean = false;
-  private onScreenshotCapturedCallback: ((buffer: Buffer) => void) | null = null;
+  private onScreenshotCapturedCallback: ((buffer: Buffer, data?: any) => void) | null = null;
   private onScreenshotFinishedCallback: (() => void) | null = null;
   private lastCaptureTime: number = 0;
+
+  // 智能窗口框选探测器:截图期间周期性把光标下方最顶层窗口 bounds 推给选区 view
+  private windowDetector: ScreenshotWindowDetector | null = null;
 
   // 全局 IPC 劫持与窗口隔离 Map
   private static winToListenersMap = new Map<any, { ok: Function, cancel: Function, save: Function }>();
@@ -18,7 +23,7 @@ export class ShortcutManager {
     // 实例池与拦截器将在 triggerScreenshot 中动态按需配置
   }
 
-  public onScreenshotCaptured(callback: (buffer: Buffer) => void): void {
+  public onScreenshotCaptured(callback: (buffer: Buffer, data?: any) => void): void {
     this.onScreenshotCapturedCallback = callback;
   }
 
@@ -28,14 +33,17 @@ export class ShortcutManager {
 
   /**
    * 统一处理截图保存或确认的回调（防重去重，联动关闭所有窗口，解绑快捷键）
+   * @param buffer 裁剪后的图片数据
+   * @param data react-screenshots 回传的 { bounds, display },display 用于 toast 跟随截图所在屏
    */
-  private handleScreenshotOk(buffer: Buffer): void {
+  private handleScreenshotOk(buffer: Buffer, data?: any): void {
     if (!this.isCapturing) return;
     this.isCapturing = false;
     this.unregisterEscapeShortcut();
+    this.stopWindowDetector();
 
     console.log('[ShortcutManager] Capturing completed successfully, closing all screens');
-    
+
     // 关闭所有截图窗口
     this.screenshotInstances.forEach(instance => {
       try {
@@ -48,7 +56,7 @@ export class ShortcutManager {
     });
 
     if (this.onScreenshotCapturedCallback) {
-      this.onScreenshotCapturedCallback(buffer);
+      this.onScreenshotCapturedCallback(buffer, data);
     }
 
     if (this.onScreenshotFinishedCallback) {
@@ -67,6 +75,7 @@ export class ShortcutManager {
     if (!this.isCapturing) return;
     this.isCapturing = false;
     this.unregisterEscapeShortcut();
+    this.stopWindowDetector();
 
     console.log('[ShortcutManager] Capturing cancelled, closing all screens');
 
@@ -391,6 +400,34 @@ export class ShortcutManager {
             }
           }, 10);
 
+          // 注入智能窗口框选 overlay 脚本:在选区 view 的 DOM 就绪后注入主世界,
+          // 拦截左键实现「悬停高亮 / 单击选窗口 / 1s 内再点保存」,拖拽则交还原生交互。
+          // 脚本内部用 __SHOT_OVERLAY_INSTALLED__ 幂等保护,故多路径注入安全。
+          try {
+            const view = screenshots.$view;
+            if (view && view.webContents && !view.webContents.isDestroyed()) {
+              const inject = () => {
+                try {
+                  if (!view.webContents.isDestroyed()) {
+                    view.webContents.executeJavaScript(SCREENSHOT_OVERLAY_SCRIPT, true)
+                      .catch((e: any) => console.error('[ShortcutManager] overlay inject rejected:', e));
+                  }
+                } catch (injectErr) {
+                  console.error('[ShortcutManager] overlay inject throw:', injectErr);
+                }
+              };
+              // 立即尝试一次(若 DOM 已就绪则直接成功;未就绪会被 __SHOT_OVERLAY_INSTALLED__ 之外
+              // 的执行时机拦下,但 executeJavaScript 会自动排队到导航完成,通常也能成功)
+              inject();
+              // dom-ready 为主路径(React 应用挂载完成,document.body 必然存在)
+              view.webContents.once('dom-ready', inject);
+              // did-finish-load 兜底(内部幂等保护,重复注入无副作用)
+              view.webContents.once('did-finish-load', inject);
+            }
+          } catch (injectErr) {
+            console.error('[ShortcutManager] Failed to set up overlay injection:', injectErr);
+          }
+
           ShortcutManager.winToListenersMap.set(win, {
             ok: newOk as Function,
             cancel: newCancel as Function,
@@ -398,15 +435,17 @@ export class ShortcutManager {
           });
         });
 
-        // 4. 监听事件以联动其他窗口并触发 finished 回调
-        screenshots.on('ok', (e: any, buffer: Buffer) => {
+        // 4. 监听事件以联动其他窗口并触发 finished 回调。
+        // electron-screenshots 在 emit('ok'/'save') 时会携带第三方参 data(含 bounds 与 display),
+        // 透传给上层以让成功提示浮窗跟随实际截图所在屏。
+        screenshots.on('ok', (e: any, buffer: Buffer, data?: any) => {
           console.log(`[ShortcutManager] ok triggered, index: ${index}`);
-          this.handleScreenshotOk(buffer);
+          this.handleScreenshotOk(buffer, data);
         });
 
-        screenshots.on('save', (e: any, buffer: Buffer) => {
+        screenshots.on('save', (e: any, buffer: Buffer, data?: any) => {
           console.log(`[ShortcutManager] save triggered, index: ${index}`);
-          this.handleScreenshotOk(buffer);
+          this.handleScreenshotOk(buffer, data);
         });
 
         screenshots.on('cancel', () => {
@@ -438,6 +477,9 @@ export class ShortcutManager {
     this.isCapturing = true;
     this.registerEscapeShortcut();
 
+    // 启动智能窗口框选探测器:周期性把光标下方最顶层窗口 bounds 推给对应 display 的选区 view
+    this.startWindowDetector(displays);
+
     // 让每个 display 的 screenshots 实例开始截图
     displays.forEach((display, index) => {
       const instance = this.screenshotInstances[index];
@@ -451,5 +493,66 @@ export class ShortcutManager {
         }
       }
     });
+  }
+
+  /**
+   * 启动窗口探测器,把光标下方最顶层窗口 bounds 推送给对应选区 view。
+   */
+  private startWindowDetector(displays: any[]): void {
+    try {
+      // 探测器已在运行则先收尾
+      this.stopWindowDetector();
+      const displayInfos: DisplayInfo[] = displays.map((d) => ({
+        id: d.id,
+        x: d.x,
+        y: d.y,
+        width: d.width,
+        height: d.height,
+        scaleFactor: d.scaleFactor,
+      }));
+      this.windowDetector = new ScreenshotWindowDetector();
+      this.windowDetector.start(displayInfos, (display) => {
+        // 按 display 维度从已建实例池中找回该 display 对应的选区 BrowserView
+        const idx = displayInfos.findIndex((info) => info.id === display.id);
+        const inst = this.screenshotInstances[idx];
+        if (inst && (inst as any).$view && !(inst as any).$view.webContents.isDestroyed()) {
+          return (inst as any).$view;
+        }
+        try {
+          // 兜底:用 screen.getDisplayNearestPoint 找光标所在实例
+          const cursor = screen.getCursorScreenPoint();
+          const matched = screen.getAllDisplays().find((d) => {
+            const b = d.bounds;
+            return cursor.x >= b.x && cursor.x < b.x + b.width && cursor.y >= b.y && cursor.y < b.y + b.height;
+          });
+          if (matched) {
+            const fallbackIdx = displayInfos.findIndex((info) => info.id === matched.id);
+            const fallbackInst = this.screenshotInstances[fallbackIdx];
+            if (fallbackInst && (fallbackInst as any).$view) {
+              return (fallbackInst as any).$view;
+            }
+          }
+        } catch {
+          // 忽略兜底失败
+        }
+        return null;
+      });
+    } catch (err) {
+      console.error('[ShortcutManager] Failed to start window detector:', err);
+    }
+  }
+
+  /**
+   * 停止窗口探测器(截图结束/取消时调用)。
+   */
+  private stopWindowDetector(): void {
+    if (this.windowDetector) {
+      try {
+        this.windowDetector.stop();
+      } catch {
+        // 忽略
+      }
+      this.windowDetector = null;
+    }
   }
 }
