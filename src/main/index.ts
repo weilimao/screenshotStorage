@@ -241,21 +241,20 @@ function initApp() {
 
   // 6. 启动监控与创建主窗口
   const config = configManager.getConfig();
-  let isSilentStart = false;
-  if (config.openAtLogin && config.silentStart) {
-    if (process.argv.includes('--hidden')) {
-      isSilentStart = true;
-    } else {
-      try {
-        const loginSettings = app.getLoginItemSettings();
-        if (loginSettings.wasOpenedAsHidden) {
-          isSilentStart = true;
-        }
-      } catch (err) {
-        console.error('Failed to get login settings on startup:', err);
-      }
-    }
+  // 第一优先级：检查命令行参数是否包含隐藏/静默启动标志（Windows 注册表自启项写入的参数）
+  const hasHiddenArg = process.argv.some(arg => ['--hidden', '--silent', '/hidden', '/silent'].includes(arg.toLowerCase()));
+  
+  // 第二优先级：系统开机自启且本地配置中开启了静默启动
+  let wasOpenedAtLogin = false;
+  try {
+    const loginSettings = app.getLoginItemSettings();
+    wasOpenedAtLogin = !!(loginSettings.wasOpenedAtLogin || (process.platform === 'darwin' && loginSettings.wasOpenedAsHidden));
+  } catch (err) {
+    console.error('Failed to get login settings on startup:', err);
   }
+
+  const isSilentStart = hasHiddenArg || (wasOpenedAtLogin && !!config.silentStart);
+  console.log(`[Startup] isSilentStart=${isSilentStart} (hasHiddenArg=${hasHiddenArg}, wasOpenedAtLogin=${wasOpenedAtLogin}, silentStartConfig=${config.silentStart})`);
 
   // 注册微信式截图完成后的回调存储逻辑
   shortcutManager.onScreenshotCaptured(async (buffer, data) => {
@@ -334,15 +333,35 @@ function initApp() {
   }, 5000);
 }
 
-app.whenReady().then(() => {
-  initApp();
-
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
-      windowManager.createMainWindow();
+const gotTheLock = app.requestSingleInstanceLock();
+if (!gotTheLock) {
+  app.quit();
+} else {
+  app.on('second-instance', (_, commandLine) => {
+    const isSecondInstanceHidden = commandLine.some(arg => ['--hidden', '--silent', '/hidden', '/silent'].includes(arg.toLowerCase()));
+    if (!isSecondInstanceHidden) {
+      const mainWindow = windowManager.getMainWindow();
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        if (mainWindow.isMinimized()) mainWindow.restore();
+        mainWindow.setSkipTaskbar(false);
+        mainWindow.show();
+        mainWindow.focus();
+      } else {
+        windowManager.createMainWindow(true);
+      }
     }
   });
-});
+
+  app.whenReady().then(() => {
+    initApp();
+
+    app.on('activate', () => {
+      if (BrowserWindow.getAllWindows().length === 0) {
+        windowManager.createMainWindow();
+      }
+    });
+  });
+}
 
 app.on('window-all-closed', () => {
   // 保持后台运行，主面板关闭只销毁窗口释放内存，托盘仍旧保持运行监听

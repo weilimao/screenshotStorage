@@ -15,7 +15,8 @@ export class ConfigManager {
       watchFolders: [],
       showFloatWindowOnStart: false,
       theme: 'light',
-      silentStart: false
+      silentStart: false,
+      openAtLogin: false
     };
 
     try {

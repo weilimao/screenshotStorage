@@ -50,18 +50,17 @@ export function registerIpcHandlers(
   ipcMain.handle(IPC_CHANNELS.GET_CONFIG, () => {
     const config = configManager.getConfig();
     try {
-      const silentStart = config.silentStart || false;
-      config.openAtLogin = app.isPackaged
-        ? (process.platform === 'win32'
-            ? app.getLoginItemSettings({
-                path: process.execPath,
-                args: silentStart ? ['--hidden'] : []
-              }).openAtLogin
-            : app.getLoginItemSettings().openAtLogin)
-        : (config.openAtLogin || false);
+      if (app.isPackaged) {
+        const loginSettings = process.platform === 'win32'
+          ? app.getLoginItemSettings({ path: process.execPath })
+          : app.getLoginItemSettings();
+        config.openAtLogin = loginSettings.openAtLogin;
+      } else {
+        config.openAtLogin = config.openAtLogin ?? false;
+      }
     } catch (err) {
       console.error('Failed to get login item settings:', err);
-      config.openAtLogin = config.openAtLogin || false;
+      config.openAtLogin = config.openAtLogin ?? false;
     }
     config.storagePath = storageManager.getStoragePath();
     return config;
@@ -95,8 +94,8 @@ export function registerIpcHandlers(
     if (newConfig.openAtLogin !== undefined || newConfig.silentStart !== undefined) {
       try {
         const currentConfig = configManager.getConfig();
-        const openAtLogin = newConfig.openAtLogin !== undefined ? newConfig.openAtLogin : currentConfig.openAtLogin;
-        const silentStart = newConfig.silentStart !== undefined ? newConfig.silentStart : currentConfig.silentStart;
+        const openAtLogin = currentConfig.openAtLogin ?? false;
+        const silentStart = currentConfig.silentStart ?? false;
 
         if (app.isPackaged) {
           if (process.platform === 'win32') {
@@ -104,7 +103,6 @@ export function registerIpcHandlers(
               openAtLogin: openAtLogin,
               path: process.execPath,
               args: openAtLogin && silentStart ? ['--hidden'] : [],
-              openAsHidden: silentStart,
             });
           } else {
             // macOS / Linux: 官方建议不指定 path 和 args
@@ -129,17 +127,14 @@ export function registerIpcHandlers(
     // 获取最新的配置并合并开机自启状态推送
     const config = configManager.getConfig();
     try {
-      const silentStart = config.silentStart || false;
-      config.openAtLogin = app.isPackaged
-        ? (process.platform === 'win32'
-            ? app.getLoginItemSettings({
-                path: process.execPath,
-                args: silentStart ? ['--hidden'] : []
-              }).openAtLogin
-            : app.getLoginItemSettings().openAtLogin)
-        : (config.openAtLogin || false);
+      if (app.isPackaged) {
+        const loginSettings = process.platform === 'win32'
+          ? app.getLoginItemSettings({ path: process.execPath })
+          : app.getLoginItemSettings();
+        config.openAtLogin = loginSettings.openAtLogin;
+      }
     } catch (err) {
-      config.openAtLogin = newConfig.openAtLogin !== undefined ? newConfig.openAtLogin : (config.openAtLogin || false);
+      console.error('Failed to query login item settings in updateConfig:', err);
     }
 
     // 合并实际存储路径推送给前端
