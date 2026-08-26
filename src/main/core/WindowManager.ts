@@ -291,21 +291,16 @@ export class WindowManager implements IWindowManager {
   /**
    * 截图保存成功后弹出独立的「✅ 截图已保存」浮窗,1.5s 淡出。
    * 该浮窗不依赖主面板是否打开,无论静默启动与否都能看到反馈。
-   * 多次调用会复用同一个 toast 窗以避免堆叠(先关旧的再开新的)。
+   * 采用单例热窗口复用(Warm Reuse),避免每次冷启动 BrowserWindow 的延迟,实现 <10ms 瞬开。
    * @param targetDisplay 可选,本次截图所在的显示器信息(来自 react-screenshots 回传的 data.display);
    *        传入则在该屏 workArea 中央弹出;否则以「光标当前所在屏」居中,再退到主屏。
    */
   public showScreenshotSuccessToast(targetDisplay?: { id?: number; x?: number; y?: number; width?: number; height?: number }): void {
     try {
-      // 若已有 toast 在显示,先清理旧的(避免连续截图时多张叠加)
       if (this.toastCleanupTimer) {
         clearTimeout(this.toastCleanupTimer);
         this.toastCleanupTimer = null;
       }
-      if (this.toastWindow && !this.toastWindow.isDestroyed()) {
-        this.toastWindow.destroy();
-      }
-      this.toastWindow = null;
 
       // 解析目标屏 workArea:按 targetDisplay.id 精确匹配 → 按其坐标命中 → 光标当前屏 → 主屏兜底
       const workArea = this.resolveToastWorkArea(targetDisplay);
@@ -314,58 +309,75 @@ export class WindowManager implements IWindowManager {
       const x = Math.round(workArea.x + (workArea.width - width) / 2);
       const y = Math.round(workArea.y + (workArea.height - height) / 2);
 
-      this.toastWindow = new BrowserWindow({
-        width,
-        height,
-        x,
-        y,
-        frame: false,
-        resizable: false,
-        movable: false,
-        minimizable: false,
-        maximizable: false,
-        fullscreenable: false,
-        transparent: true,
-        show: false,
-        skipTaskbar: true,
-        focusable: false,
-        alwaysOnTop: true,
-        hasShadow: false,
-        backgroundColor: '#00000000',
-        webPreferences: {
-          preload: this.preloadPath,
-          contextIsolation: true,
-          nodeIntegration: false,
-          sandbox: false
-        }
-      });
+      const triggerDisplay = () => {
+        if (!this.toastWindow || this.toastWindow.isDestroyed()) return;
+        this.toastWindow.setBounds({ x, y, width, height });
+        this.toastWindow.setAlwaysOnTop(true, 'pop-up-menu');
+        this.toastWindow.setSkipTaskbar(true);
+        // 重置 DOM 内部淡出动画计时器并移除 hide 类
+        try {
+          this.toastWindow.webContents.executeJavaScript(`
+            try {
+              document.body.classList.remove('hide');
+              if (window.__toastHideTimer) clearTimeout(window.__toastHideTimer);
+              window.__toastHideTimer = setTimeout(function () {
+                try { document.body.classList.add('hide'); } catch (e) {}
+              }, 1500);
+            } catch (e) {}
+          `, true).catch(() => {});
+        } catch {}
+        this.toastWindow.showInactive();
 
-      this.toastWindow.setAlwaysOnTop(true, 'pop-up-menu');
-      this.toastWindow.setSkipTaskbar(true);
+        // 1.9s 后隐藏窗口(CSS 1.5s 开始 0.4s 淡出完毕),保留窗口实例供下次极速复用
+        this.toastCleanupTimer = setTimeout(() => {
+          this.toastCleanupTimer = null;
+          if (this.toastWindow && !this.toastWindow.isDestroyed()) {
+            this.toastWindow.hide();
+          }
+        }, 1900);
+      };
 
-      this.toastWindow.loadFile(this.toastHtmlPath);
+      if (this.toastWindow && !this.toastWindow.isDestroyed()) {
+        triggerDisplay();
+      } else {
+        this.toastWindow = new BrowserWindow({
+          width,
+          height,
+          x,
+          y,
+          frame: false,
+          resizable: false,
+          movable: false,
+          minimizable: false,
+          maximizable: false,
+          fullscreenable: false,
+          transparent: true,
+          show: false,
+          skipTaskbar: true,
+          focusable: false,
+          alwaysOnTop: true,
+          hasShadow: false,
+          backgroundColor: '#00000000',
+          webPreferences: {
+            preload: this.preloadPath,
+            contextIsolation: true,
+            nodeIntegration: false,
+            sandbox: false
+          }
+        });
 
-      this.toastWindow.once('ready-to-show', () => {
-        if (this.toastWindow && !this.toastWindow.isDestroyed()) {
-          this.toastWindow.showInactive();
-        }
-      });
+        this.toastWindow.setAlwaysOnTop(true, 'pop-up-menu');
+        this.toastWindow.setSkipTaskbar(true);
+        this.toastWindow.loadFile(this.toastHtmlPath);
 
-      this.toastWindow.on('closed', () => {
-        if (this.toastWindow && !this.toastWindow.isDestroyed()) {
+        this.toastWindow.once('ready-to-show', () => {
+          triggerDisplay();
+        });
+
+        this.toastWindow.on('closed', () => {
           this.toastWindow = null;
-        }
-        this.toastWindow = null;
-      });
-
-      // CSS 内 1.5s 后开始淡出(0.4s);主进程 2.0s 兜底 destroy,防卡死泄漏
-      this.toastCleanupTimer = setTimeout(() => {
-        this.toastCleanupTimer = null;
-        if (this.toastWindow && !this.toastWindow.isDestroyed()) {
-          this.toastWindow.destroy();
-        }
-        this.toastWindow = null;
-      }, 2000);
+        });
+      }
     } catch (err) {
       console.error('[WindowManager] Failed to show screenshot success toast:', err);
     }

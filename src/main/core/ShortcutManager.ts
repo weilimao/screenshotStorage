@@ -305,6 +305,7 @@ export class ShortcutManager {
         console.log(`[ShortcutManager] ipcMain after remove: ok=${ipcMain.listenerCount('SCREENSHOTS:ok')}, cancel=${ipcMain.listenerCount('SCREENSHOTS:cancel')}`);
 
         // 1. Monkey-Patch 重写 startCapture
+        const managerRef = this;
         screenshots.startCapture = async function() {
           const targetDisplay = (this as any).customDisplay;
           if (!targetDisplay) {
@@ -315,6 +316,13 @@ export class ShortcutManager {
           const [imageUrl] = await Promise.all([self.capture(targetDisplay), self.isReady]);
           await self.createWindow(targetDisplay);
           self.$view.webContents.send('SCREENSHOTS:capture', targetDisplay, imageUrl);
+
+          // 核心修复: 在选区视图就绪并收到 capture 后,立即清除签名缓存并触发即刻探测,
+          // 确保光标下方的当前窗口在截图开始瞬间即被高亮框选,无需移动鼠标
+          if (managerRef.windowDetector) {
+            managerRef.windowDetector.resetSignatures();
+            managerRef.windowDetector.tickNow();
+          }
         };
 
         // 2. Monkey-Patch 重写 capture
@@ -487,7 +495,14 @@ export class ShortcutManager {
         (instance as any).customDisplay = display;
         try {
           console.log(`[ShortcutManager] Activating capture for display ${display.id} (index: ${index})`);
-          instance.startCapture();
+          instance.startCapture().then(() => {
+            if (this.windowDetector) {
+              this.windowDetector.resetSignatures();
+              this.windowDetector.tickNow();
+            }
+          }).catch(err => {
+            console.error(`[ShortcutManager] Failed during startCapture async on display ${display.id}:`, err);
+          });
         } catch (err) {
           console.error(`[ShortcutManager] Failed to start capture on display ${display.id}:`, err);
         }

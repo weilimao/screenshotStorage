@@ -259,6 +259,10 @@ function initApp() {
   // 注册微信式截图完成后的回调存储逻辑
   shortcutManager.onScreenshotCaptured(async (buffer, data) => {
     try {
+      // 1. 极速响应：第一时间在目标屏幕弹出「✅ 截图已保存」Toast 浮窗，不阻塞等待后续异步 I/O
+      const targetDisplay = data && data.display ? data.display : undefined;
+      windowManager.showScreenshotSuccessToast(targetDisplay);
+
       const record = await storageManager.saveImage(buffer);
       if (!record) return; // 自动去重过滤
 
@@ -285,11 +289,6 @@ function initApp() {
       // 推送给所有窗口更新
       windowManager.sendToMainWindow(IPC_CHANNELS.ON_NEW_IMAGE, record);
       windowManager.sendToFloatWindow(IPC_CHANNELS.ON_NEW_IMAGE, record);
-
-      // 截图保存成功后,在「该次截图所在屏」中央弹出独立成功提示浮窗(无论主面板是否打开都可见)。
-      // data.display 为截图发生时的显示器信息,跟随它以保证副屏截图时浮窗也在副屏而非主屏。
-      const targetDisplay = data && data.display ? data.display : undefined;
-      windowManager.showScreenshotSuccessToast(targetDisplay);
     } catch (err) {
       console.error('Failed to handle screenshots event callback:', err);
     }

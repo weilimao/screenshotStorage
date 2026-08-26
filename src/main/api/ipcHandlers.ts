@@ -13,6 +13,28 @@ function isImageFile(filePath: string): boolean {
   return ['png', 'jpg', 'jpeg', 'gif', 'bmp', 'webp'].includes(ext || '');
 }
 
+function getAppLoginItemSettings(silentStart?: boolean): { openAtLogin: boolean } {
+  if (process.platform === 'win32') {
+    // 优先按当前配置的静默启动参数匹配
+    let settings = app.getLoginItemSettings({
+      path: process.execPath,
+      args: silentStart ? ['--hidden'] : []
+    });
+    // 若未匹配成功，回退尝试反向参数匹配（处理用户在历史模式下设置过的自启项）
+    if (!settings.openAtLogin) {
+      const fallbackSettings = app.getLoginItemSettings({
+        path: process.execPath,
+        args: silentStart ? [] : ['--hidden']
+      });
+      if (fallbackSettings.openAtLogin) {
+        settings = fallbackSettings;
+      }
+    }
+    return settings;
+  }
+  return app.getLoginItemSettings();
+}
+
 export function registerIpcHandlers(
   configManager: ConfigManager,
   storageManager: StorageManager,
@@ -51,9 +73,7 @@ export function registerIpcHandlers(
     const config = configManager.getConfig();
     try {
       if (app.isPackaged) {
-        const loginSettings = process.platform === 'win32'
-          ? app.getLoginItemSettings({ path: process.execPath })
-          : app.getLoginItemSettings();
+        const loginSettings = getAppLoginItemSettings(config.silentStart);
         config.openAtLogin = loginSettings.openAtLogin;
       } else {
         config.openAtLogin = config.openAtLogin ?? false;
@@ -128,9 +148,7 @@ export function registerIpcHandlers(
     const config = configManager.getConfig();
     try {
       if (app.isPackaged) {
-        const loginSettings = process.platform === 'win32'
-          ? app.getLoginItemSettings({ path: process.execPath })
-          : app.getLoginItemSettings();
+        const loginSettings = getAppLoginItemSettings(config.silentStart);
         config.openAtLogin = loginSettings.openAtLogin;
       }
     } catch (err) {

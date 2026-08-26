@@ -20,6 +20,13 @@ import { screen, BrowserView } from 'electron';
  *  - 选区 view 内部坐标系起点对齐 display 物理原点,dip 表示,故最终把窗口物理矩形
  *    减去 display 物理原点再除以 sf 得到 view 内 dip 相对坐标。
  */
+let NodeScreenshotWindow: any = null;
+try {
+  NodeScreenshotWindow = require('node-screenshots').Window;
+} catch (e) {
+  console.error('[ScreenshotWindowDetector] Failed to load node-screenshots Window:', e);
+}
+
 export class ScreenshotWindowDetector {
   private timer: NodeJS.Timeout | null = null;
   private targets: Array<{
@@ -53,7 +60,21 @@ export class ScreenshotWindowDetector {
       }
     });
 
-    this.timer = setInterval(() => this.tick(), 50);
+    this.timer = setInterval(() => this.tick(), 30);
+  }
+
+  /**
+   * 清理去重签名缓存(截图就绪时调用,确保光标下的窗口无论是否移动都能被即刻选中)
+   */
+  public resetSignatures(): void {
+    this.lastSignature.clear();
+  }
+
+  /**
+   * 强制立即执行一次探测(避免等待下一个 tick 周期)
+   */
+  public tickNow(): void {
+    this.tick();
   }
 
   public stop(): void {
@@ -133,17 +154,11 @@ export class ScreenshotWindowDetector {
    * 返回其在选区 view 内的 dip 相对坐标。
    */
   private detectTopWindowAt(cursorDip: { x: number; y: number }, target: { display: DisplayInfo; phys: { x: number; y: number; width: number; height: number } }): BoundsInUI | null {
-    let WindowNS: any;
-    try {
-      WindowNS = require('node-screenshots').Window;
-    } catch (err) {
-      console.error('[ScreenshotWindowDetector] require node-screenshots.Window failed:', err);
-      return null;
-    }
+    if (!NodeScreenshotWindow) return null;
 
     let allWindows: any[];
     try {
-      allWindows = WindowNS.all();
+      allWindows = NodeScreenshotWindow.all();
     } catch {
       return null;
     }
@@ -153,8 +168,8 @@ export class ScreenshotWindowDetector {
     const phys = target.phys;
 
     // 光标落在该 display 物理矩形内的物理坐标(与 Window 坐标同系)
-    let cx = (cursorDip.x - target.display.x) * sf + phys.x;
-    let cy = (cursorDip.y - target.display.y) * sf + phys.y;
+    const cx = (cursorDip.x - target.display.x) * sf + phys.x;
+    const cy = (cursorDip.y - target.display.y) * sf + phys.y;
 
     let best: any = null;
     let bestZ = -Infinity;
@@ -163,37 +178,37 @@ export class ScreenshotWindowDetector {
 
     for (const win of allWindows) {
       try {
-        if (typeof win.isMinimized === 'function' && win.isMinimized()) continue;
-        // 排除截图窗自身(electron-screenshots 创建的窗口 title 固定为 'screenshots')
-        const title = (typeof win.title === 'function' ? win.title() : '') || '';
-        if (title === 'screenshots') continue;
-        // 排除本应用自身所有窗口(主面板/浮窗均与本进程同 pid)
-        const pid = typeof win.pid === 'function' ? win.pid() : 0;
-        if (pid && pid === process.pid) continue;
-
         const wx = win.x();
         const wy = win.y();
         const ww = win.width();
         const wh = win.height();
         if (ww <= 0 || wh <= 0) continue;
 
-        // 光标物理坐标必须落在窗口物理矩形内
+        // 1. 最先做坐标命中几何短路判断(Fast Path):过滤 95% 以上无关窗口,消除大量跨进程 API 同步调用
         const insideWindow = cx >= wx && cx < wx + ww && cy >= wy && cy < wy + wh;
         if (!insideWindow) continue;
 
-        // 窗口必须与目标 display 物理矩形有重叠(过滤跨屏但实属其他 display 的窗口)
+        // 2. 窗口必须与目标 display 物理矩形有重叠
         const overlapX = Math.min(wx + ww, phys.x + phys.width) - Math.max(wx, phys.x);
         const overlapY = Math.min(wy + wh, phys.y + phys.height) - Math.max(wy, phys.y);
         if (overlapX <= 0 || overlapY <= 0) continue;
 
-        // 拥有焦点的候选(若存在)即为用户实际活动窗口,优先定为目标,避免被高 z 的隐身/
-        // 工具提示类幻影窗口抢位。截图窗自身已按 title 剔除,故此命中必为真实目标。
+        // 3. 仅对命中光标的候选窗口查询进程 PID 与标题,剔除截图窗自身与本进程
+        const pid = typeof win.pid === 'function' ? win.pid() : 0;
+        if (pid && pid === process.pid) continue;
+
+        const title = (typeof win.title === 'function' ? win.title() : '') || '';
+        if (title === 'screenshots') continue;
+
+        if (typeof win.isMinimized === 'function' && win.isMinimized()) continue;
+
+        // 4. 优先记录当前拥有焦点的真实活动窗口
         try {
           if (typeof win.isFocused === 'function' && win.isFocused()) {
             focused = win;
           }
         } catch {
-          // isFocused 查询失败忽略,不影响后续 z 比较
+          // isFocused 查询失败忽略
         }
 
         let z = 0;
@@ -225,7 +240,6 @@ export class ScreenshotWindowDetector {
     const physH = best.height();
 
     // 用该窗口自身所在 display 的 scaleFactor 换算(B4),消除混合 DPI 跨屏边界 off-by-one。
-    // 每窗 currentMonitor() 必落在某 display 内,scaleFactor 取其值;查询失败则退回 target sf。
     let winSf = sf;
     try {
       const mon = typeof best.currentMonitor === 'function' ? best.currentMonitor() : null;
